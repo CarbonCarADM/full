@@ -133,47 +133,47 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ appointments, 
     };
 
     return (
-        <div className="p-6 md:p-12 pb-24 animate-fade-in max-w-[1800px] mx-auto space-y-12">
+        <div className="p-4 md:p-8 pb-24 animate-fade-in max-w-[1800px] mx-auto space-y-6 md:space-y-8">
             <ConfirmationModal isOpen={confirmModal.isOpen} onClose={() => setConfirmModal(p => ({ ...p, isOpen: false }))} onConfirm={confirmModal.onConfirm} title={confirmModal.title} message={confirmModal.message} variant={confirmModal.variant} />
             <ReportExportModal isOpen={isReportModalOpen} onClose={() => setIsReportModalOpen(false)} businessId={businessId || ''} businessName="CarbonCar Hangar" />
             
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 border-b border-white/5 pb-8">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 border-b border-white/5 pb-6">
                 <div>
-                    <h2 className="text-4xl font-black text-white uppercase tracking-tighter mb-2 flex items-center gap-3"><BarChart3 className="text-red-600" size={32} /> Terminal Financeiro</h2>
-                    <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-[0.4em] pl-11">Análise de Performance e Fluxo</p>
+                    <h2 className="text-2xl md:text-3xl font-black text-white uppercase tracking-tighter mb-2 flex items-center gap-3"><BarChart3 className="text-red-600" size={24} /> Terminal Financeiro</h2>
+                    <p className="text-[9px] md:text-[10px] font-bold text-zinc-500 uppercase tracking-[0.4em] pl-10">Análise de Performance e Fluxo</p>
                 </div>
                 
                 <div className="flex gap-4 w-full md:w-auto">
                     {currentPlan !== PlanType.START && (
                         <button 
                             onClick={() => setIsReportModalOpen(true)}
-                            className="bg-zinc-900 border border-white/10 text-white px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-zinc-800 transition-all flex items-center gap-3 w-full md:w-auto justify-center"
+                            className="bg-zinc-900 border border-white/10 text-white px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-zinc-800 transition-all flex items-center gap-2 w-full md:w-auto justify-center"
                         >
                             <FileText size={16} /> Relatórios
                         </button>
                     )}
                     
-                    <button onClick={() => { setEditingExpenseId(null); setNewTransaction({ description: '', amount: 0, category: 'FIXO', date: new Date().toISOString().split('T')[0], type: 'DESPESA', payment_method: 'DINHEIRO' }); setIsTransactionModalOpen(true); }} className="bg-white text-black px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-zinc-200 transition-all shadow-glow active:scale-95 flex items-center gap-3 w-full md:w-auto justify-center"><Plus size={16} /> Nova Transação</button>
+                    <button onClick={() => { setEditingExpenseId(null); setNewTransaction({ description: '', amount: 0, category: 'FIXO', date: new Date().toISOString().split('T')[0], type: 'DESPESA', payment_method: 'DINHEIRO' }); setIsTransactionModalOpen(true); }} className="bg-white text-black px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-zinc-200 transition-all shadow-glow active:scale-95 flex items-center gap-2 w-full md:w-auto justify-center"><Plus size={16} /> Nova Transação</button>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-5">
                 {[
                     { label: 'Receita Bruta', value: totalRevenue, color: 'text-green-500', icon: ArrowUpRight },
                     { label: 'Despesas Operacionais', value: totalExpenses, color: 'text-red-500', icon: ArrowDownLeft },
                     { label: 'Resultado Líquido', value: netProfit, color: netProfit >= 0 ? 'text-white' : 'text-red-500', icon: Wallet }
                 ].map((stat, i) => (
-                    <div key={i} className="bg-[#09090b] border border-white/5 rounded-[2rem] p-8 relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity"><stat.icon size={64} className={stat.color} /></div>
-                        <p className="text-[9px] font-black text-zinc-600 uppercase tracking-widest mb-4">{stat.label}</p>
-                        <h3 className={cn("text-4xl lg:text-5xl font-black tabular-nums tracking-tighter", stat.color)}><span className="text-lg align-top opacity-50 mr-2">R$</span>{stat.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h3>
+                    <div key={i} className="bg-[#09090b] border border-white/5 rounded-[1.5rem] p-5 relative overflow-hidden group">
+                        <div className="absolute top-0 right-0 p-5 opacity-10 group-hover:opacity-20 transition-opacity"><stat.icon className={cn("w-12 h-12", stat.color)} /></div>
+                        <p className="text-[9px] font-black text-zinc-600 uppercase tracking-widest mb-2">{stat.label}</p>
+                        <h3 className={cn("text-3xl lg:text-4xl font-black tabular-nums tracking-tighter", stat.color)}><span className="text-lg align-top opacity-50 mr-2">R$</span>{stat.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h3>
                     </div>
                 ))}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-auto lg:h-[400px]">
-                <div className="lg:col-span-2 bg-[#09090b] border border-white/5 rounded-[2rem] p-8 flex flex-col h-[400px] lg:h-auto">
-                    <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-6 flex items-center gap-2">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 md:gap-6 h-auto lg:h-[320px]">
+                <div className="lg:col-span-2 bg-[#09090b] border border-white/5 rounded-[1.5rem] p-5 md:p-6 flex flex-col h-[300px] lg:h-auto">
+                    <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-4 flex items-center gap-2">
                         <TrendingUp size={14} className="text-white"/> Fluxo de Caixa (7 Dias)
                     </h3>
                     <div className="flex-1 w-full min-h-0">
@@ -204,8 +204,8 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ appointments, 
                     </div>
                 </div>
 
-                <div className="bg-[#09090b] border border-white/5 rounded-[2rem] p-8 flex flex-col h-[400px] lg:h-auto">
-                     <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-6 flex items-center gap-2">
+                <div className="bg-[#09090b] border border-white/5 rounded-[1.5rem] p-5 md:p-6 flex flex-col h-[300px] lg:h-auto">
+                     <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-4 flex items-center gap-2">
                         <PieChartIcon size={14} className="text-white"/> Despesas por Categoria
                     </h3>
                     <div className="flex-1 w-full min-h-0 relative">
@@ -215,8 +215,8 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ appointments, 
                                     data={pieData}
                                     cx="50%"
                                     cy="50%"
-                                    innerRadius={60}
-                                    outerRadius={80}
+                                    innerRadius={50}
+                                    outerRadius={70}
                                     paddingAngle={5}
                                     dataKey="value"
                                     stroke="none"
@@ -245,12 +245,12 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ appointments, 
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="bg-[#09090b] border border-white/5 rounded-[2rem] p-8 h-full">
-                    <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-6 flex items-center gap-2"><ArrowUpRight className="text-green-500" size={14}/> Entradas</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6">
+                <div className="bg-[#09090b] border border-white/5 rounded-[1.5rem] p-5 md:p-6 h-full">
+                    <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-4 flex items-center gap-2"><ArrowUpRight className="text-green-500" size={14}/> Entradas</h3>
                     <div className="space-y-1">
                         {expenses.filter(e => e.type === 'RECEITA').map(t => (
-                            <div key={t.id} className="flex justify-between items-center p-3 hover:bg-white/5 rounded-xl transition-colors group">
+                            <div key={t.id} className="flex justify-between items-center p-2.5 hover:bg-white/5 rounded-lg transition-colors group">
                                 <div><p className="text-xs font-bold text-white uppercase">{t.description}</p><p className="text-[9px] font-bold text-zinc-600 uppercase">{new Date(t.date).toLocaleDateString()} • {t.category}</p></div>
                                 <div className="flex items-center gap-4"><span className="text-sm font-black text-green-500">R$ {Number(t.amount).toFixed(2)}</span>
                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -261,11 +261,11 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ appointments, 
                         ))}
                     </div>
                 </div>
-                <div className="bg-[#09090b] border border-white/5 rounded-[2rem] p-8 h-full">
-                    <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-6 flex items-center gap-2"><ArrowDownLeft className="text-red-500" size={14}/> Saídas</h3>
+                <div className="bg-[#09090b] border border-white/5 rounded-[1.5rem] p-5 md:p-6 h-full">
+                    <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-4 flex items-center gap-2"><ArrowDownLeft className="text-red-500" size={14}/> Saídas</h3>
                     <div className="space-y-1">
                         {expenses.filter(e => e.type === 'DESPESA' || !e.type).map(t => (
-                            <div key={t.id} className="flex justify-between items-center p-3 hover:bg-white/5 rounded-xl transition-colors group">
+                            <div key={t.id} className="flex justify-between items-center p-2.5 hover:bg-white/5 rounded-lg transition-colors group">
                                 <div><p className="text-xs font-bold text-white uppercase">{t.description}</p><p className="text-[9px] font-bold text-zinc-600 uppercase">{new Date(t.date).toLocaleDateString()} • {t.category}</p></div>
                                 <div className="flex items-center gap-4"><span className="text-sm font-black text-red-500">R$ {Number(t.amount).toFixed(2)}</span>
                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -280,24 +280,24 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ appointments, 
 
             {isTransactionModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/95 backdrop-blur-sm">
-                    <div className="bg-[#0c0c0c] border border-white/10 rounded-[2.5rem] w-full max-w-lg p-8 animate-in zoom-in duration-300">
-                        <h3 className="text-xl font-bold text-white uppercase mb-8">{editingExpenseId ? 'Editar Movimentação' : 'Registrar Movimentação'}</h3>
-                        <div className="space-y-4">
+                    <div className="bg-[#0c0c0c] border border-white/10 rounded-[2rem] w-full max-w-lg p-8 animate-in zoom-in duration-300">
+                        <h3 className="text-xl font-bold text-white uppercase mb-6">{editingExpenseId ? 'Editar Movimentação' : 'Registrar Movimentação'}</h3>
+                        <div className="space-y-3">
                             <div className="flex bg-zinc-950 p-1 rounded-xl border border-white/5">
-                                <button onClick={() => setTransactionType('DESPESA')} className={cn("flex-1 py-3 rounded-lg text-[10px] font-black uppercase transition-all", transactionType === 'DESPESA' ? "bg-red-600 text-white shadow-glow-red" : "text-zinc-500")}>Despesa</button>
-                                <button onClick={() => setTransactionType('RECEITA')} className={cn("flex-1 py-3 rounded-lg text-[10px] font-black uppercase transition-all", transactionType === 'RECEITA' ? "bg-green-600 text-white shadow-glow-green" : "text-zinc-500")}>Receita</button>
+                                <button onClick={() => setTransactionType('DESPESA')} className={cn("flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase transition-all", transactionType === 'DESPESA' ? "bg-red-600 text-white shadow-glow-red" : "text-zinc-500")}>Despesa</button>
+                                <button onClick={() => setTransactionType('RECEITA')} className={cn("flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase transition-all", transactionType === 'RECEITA' ? "bg-green-600 text-white shadow-glow-green" : "text-zinc-500")}>Receita</button>
                             </div>
-                            <input placeholder="DESCRIÇÃO" className="w-full bg-zinc-950 border border-white/10 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none" value={newTransaction.description} onChange={e => setNewTransaction({...newTransaction, description: e.target.value})} />
-                            <div className="grid grid-cols-2 gap-4">
-                                <input type="number" placeholder="VALOR" className="w-full bg-zinc-950 border border-white/10 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none" value={newTransaction.amount || ''} onChange={e => setNewTransaction({...newTransaction, amount: Number(e.target.value)})} />
-                                <input type="date" className="w-full bg-zinc-950 border border-white/10 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none" value={newTransaction.date} onChange={e => setNewTransaction({...newTransaction, date: e.target.value})} />
+                            <input placeholder="DESCRIÇÃO" className="w-full bg-zinc-950 border border-white/10 rounded-xl p-3 text-xs font-bold text-white uppercase outline-none" value={newTransaction.description} onChange={e => setNewTransaction({...newTransaction, description: e.target.value})} />
+                            <div className="grid grid-cols-2 gap-3">
+                                <input type="number" placeholder="VALOR" className="w-full bg-zinc-950 border border-white/10 rounded-xl p-3 text-xs font-bold text-white uppercase outline-none" value={newTransaction.amount || ''} onChange={e => setNewTransaction({...newTransaction, amount: Number(e.target.value)})} />
+                                <input type="date" className="w-full bg-zinc-950 border border-white/10 rounded-xl p-3 text-xs font-bold text-white uppercase outline-none" value={newTransaction.date} onChange={e => setNewTransaction({...newTransaction, date: e.target.value})} />
                             </div>
-                            <select className="w-full bg-zinc-950 border border-white/10 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none" value={newTransaction.category} onChange={e => setNewTransaction({...newTransaction, category: e.target.value})}>
+                            <select className="w-full bg-zinc-950 border border-white/10 rounded-xl p-3 text-xs font-bold text-white uppercase outline-none" value={newTransaction.category} onChange={e => setNewTransaction({...newTransaction, category: e.target.value})}>
                                 {(transactionType === 'RECEITA' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map(cat => <option key={cat} value={cat}>{cat}</option>)}
                             </select>
-                            <div className="flex gap-4 pt-4">
-                                <button onClick={() => setIsTransactionModalOpen(false)} className="flex-1 py-4 text-[10px] font-black uppercase text-zinc-500">Cancelar</button>
-                                <button onClick={handleSaveTransaction} disabled={savingEntity} className="flex-1 py-4 bg-white text-black rounded-xl text-[10px] font-black uppercase hover:bg-zinc-200 flex items-center justify-center gap-2">{savingEntity ? <Loader2 className="animate-spin" size={14}/> : 'Confirmar'}</button>
+                            <div className="flex gap-3 pt-3">
+                                <button onClick={() => setIsTransactionModalOpen(false)} className="flex-1 py-3 text-[10px] font-black uppercase text-zinc-500">Cancelar</button>
+                                <button onClick={handleSaveTransaction} disabled={savingEntity} className="flex-1 py-3 bg-white text-black rounded-xl text-[10px] font-black uppercase hover:bg-zinc-200 flex items-center justify-center gap-2">{savingEntity ? <Loader2 className="animate-spin" size={14}/> : 'Confirmar'}</button>
                             </div>
                         </div>
                     </div>

@@ -95,7 +95,7 @@ export const Schedule: React.FC<ScheduleProps> = ({
   };
 
   return (
-    <div className="p-6 md:p-12 pb-32 animate-fade-in space-y-12 max-w-[1800px] mx-auto">
+    <div className="p-4 md:p-8 pb-32 animate-fade-in space-y-6 md:space-y-8 max-w-[1800px] mx-auto">
       
       <ConfirmationModal 
          isOpen={confirmModal.isOpen}
@@ -106,27 +106,27 @@ export const Schedule: React.FC<ScheduleProps> = ({
          variant={confirmModal.variant}
       />
 
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end gap-8 border-b border-white/5 pb-8">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end gap-6 border-b border-white/5 pb-6">
         <div>
-          <div className="flex items-center gap-4 mb-2">
-              <div className="w-12 h-12 bg-red-600/10 border border-red-600/20 rounded-xl flex items-center justify-center">
-                  <Calendar className="text-red-600" size={24} />
+          <div className="flex items-center gap-3 mb-1">
+              <div className="w-10 h-10 bg-red-600/10 border border-red-600/20 rounded-xl flex items-center justify-center">
+                  <Calendar className="text-red-600" size={20} />
               </div>
-              <h2 className="text-4xl font-black text-white uppercase tracking-tighter leading-none">
+              <h2 className="text-2xl md:text-3xl font-black text-white uppercase tracking-tighter leading-none">
                 Cronograma <span className="text-zinc-600">Mestre</span>
               </h2>
           </div>
-          <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.4em] pl-16">
+          <p className="text-zinc-500 text-[9px] md:text-[10px] font-bold uppercase tracking-[0.4em] pl-14">
             Gestão Temporal de Processos
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4">
-            <div className="flex p-1.5 bg-[#09090b] border border-white/5 rounded-2xl">
+        <div className="flex flex-wrap items-center gap-3">
+            <div className="flex p-1 bg-[#09090b] border border-white/5 rounded-2xl">
                 <button 
                     onClick={() => setViewMode('AGENDA')}
                     className={cn(
-                        "px-6 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2",
+                        "px-4 py-2 text-[9px] md:text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2",
                         viewMode === 'AGENDA' ? "bg-white text-black shadow-glow" : "text-zinc-500 hover:text-white"
                     )}
                 >
@@ -135,7 +135,7 @@ export const Schedule: React.FC<ScheduleProps> = ({
                 <button 
                     onClick={() => setViewMode('HISTORY')}
                     className={cn(
-                        "px-6 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2",
+                        "px-4 py-2 text-[9px] md:text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2",
                         viewMode === 'HISTORY' ? "bg-white text-black shadow-glow" : "text-zinc-500 hover:text-white"
                     )}
                 >
@@ -145,11 +145,11 @@ export const Schedule: React.FC<ScheduleProps> = ({
             
             <button 
                 onClick={() => setIsModalOpen(true)}
-                className="group relative overflow-hidden bg-red-600 hover:bg-red-500 text-white px-8 py-4 rounded-2xl transition-all shadow-glow-red"
+                className="group relative overflow-hidden bg-red-600 hover:bg-red-500 text-white px-5 py-3 rounded-xl transition-all shadow-glow-red"
             >
-                <div className="relative z-10 flex items-center gap-3">
-                    <Plus size={18} strokeWidth={3} /> 
-                    <span className="text-[10px] font-black uppercase tracking-widest">Novo Box</span>
+                <div className="relative z-10 flex items-center gap-2">
+                    <Plus size={16} strokeWidth={3} /> 
+                    <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest">Novo Box</span>
                 </div>
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
             </button>
@@ -157,27 +157,27 @@ export const Schedule: React.FC<ScheduleProps> = ({
       </div>
 
       {viewMode === 'AGENDA' && (
-        <div className="flex items-center justify-between bg-[#09090b] p-2 pr-6 pl-2 rounded-full border border-white/5 max-w-2xl mx-auto backdrop-blur-md sticky top-4 z-20 shadow-2xl">
-            <button onClick={() => changeDate(-1)} className="w-12 h-12 bg-black border border-white/10 rounded-full text-zinc-400 hover:text-white flex items-center justify-center transition-all hover:scale-110 active:scale-95">
-                <ChevronLeft size={20}/>
+        <div className="flex items-center justify-between bg-[#09090b] p-1.5 pr-4 pl-1.5 rounded-full border border-white/5 max-w-xl mx-auto backdrop-blur-md sticky top-4 z-20 shadow-2xl">
+            <button onClick={() => changeDate(-1)} className="w-10 h-10 bg-black border border-white/10 rounded-full text-zinc-400 hover:text-white flex items-center justify-center transition-all hover:scale-110 active:scale-95">
+                <ChevronLeft size={18} />
             </button>
             <div className="flex flex-col items-center">
-                <span className="text-[9px] font-black text-red-500 uppercase tracking-[0.3em] mb-0.5">Data Operacional</span>
-                <span className="text-sm md:text-lg font-bold text-white uppercase tracking-wider">{formatDate(selectedDate)}</span>
+                <span className="text-[8px] font-black text-red-500 uppercase tracking-[0.3em] mb-0.5">Data Operacional</span>
+                <span className="text-sm font-bold text-white uppercase tracking-wider">{formatDate(selectedDate)}</span>
             </div>
-            <button onClick={() => changeDate(1)} className="w-12 h-12 bg-black border border-white/10 rounded-full text-zinc-400 hover:text-white flex items-center justify-center transition-all hover:scale-110 active:scale-95">
-                <ChevronRight size={20}/>
+            <button onClick={() => changeDate(1)} className="w-10 h-10 bg-black border border-white/10 rounded-full text-zinc-400 hover:text-white flex items-center justify-center transition-all hover:scale-110 active:scale-95">
+                <ChevronRight size={18} />
             </button>
         </div>
       )}
 
-      <div className="relative space-y-4 min-h-[500px]">
-        <div className="absolute left-[85px] md:left-[110px] top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-white/10 to-transparent hidden md:block" />
+      <div className="relative space-y-3 min-h-[500px]">
+        <div className="absolute left-[85px] md:left-[100px] top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-white/10 to-transparent hidden md:block" />
 
         {activeList.length === 0 ? (
-             <div className="flex flex-col items-center justify-center py-32 opacity-40">
-                 <div className="w-32 h-32 rounded-full border-2 border-dashed border-zinc-800 flex items-center justify-center mb-6">
-                     <Clock className="text-zinc-700 w-12 h-12" />
+             <div className="flex flex-col items-center justify-center py-24 opacity-40">
+                 <div className="w-20 h-20 rounded-full border-2 border-dashed border-zinc-800 flex items-center justify-center mb-4">
+                     <Clock className="text-zinc-700 w-10 h-10" />
                  </div>
                  <p className="text-zinc-500 text-xs font-black uppercase tracking-[0.3em]">Nenhum procedimento agendado</p>
              </div>
@@ -190,17 +190,17 @@ export const Schedule: React.FC<ScheduleProps> = ({
                 return (
                     <div key={apt.id} className="relative group animate-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: `${index * 50}ms` }}>
                         <div className={cn(
-                            "absolute left-[110px] top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-2 z-10 hidden md:block transition-all",
+                            "absolute left-[100px] top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full border-2 z-10 hidden md:block transition-all",
                             isRunning ? "bg-red-600 border-red-600 shadow-[0_0_15px_#dc2626] scale-125" : "bg-[#020202] border-zinc-700 group-hover:border-white"
                         )} style={{ marginLeft: '-5px' }} />
 
                         <div className={cn(
-                            "flex flex-col md:flex-row items-stretch gap-6 md:gap-10 p-2 md:p-0 rounded-[2rem] transition-all duration-300",
+                            "flex flex-col md:flex-row items-stretch gap-4 md:gap-8 p-2 md:p-0 rounded-[1.5rem] transition-all duration-300",
                             isRunning ? "bg-white/[0.02]" : "hover:bg-white/[0.01]"
                         )}>
-                            <div className="w-full md:w-[110px] flex flex-row md:flex-col items-center justify-center md:justify-start md:pt-8 gap-4 md:gap-1 shrink-0">
+                            <div className="w-full md:w-[100px] flex flex-row md:flex-col items-center justify-center md:justify-start md:pt-6 gap-3 md:gap-1 shrink-0">
                                 <span className={cn(
-                                    "text-2xl md:text-3xl font-black tabular-nums tracking-tighter",
+                                    "text-xl md:text-2xl font-black tabular-nums tracking-tighter",
                                     isRunning ? "text-red-500" : "text-white"
                                 )}>
                                     {apt.time}
@@ -211,50 +211,50 @@ export const Schedule: React.FC<ScheduleProps> = ({
                             </div>
 
                             <div className={cn(
-                                "flex-1 rounded-[2rem] border p-6 md:p-8 relative overflow-hidden transition-all duration-300 backdrop-blur-sm",
+                                "flex-1 rounded-[2rem] border p-4 md:p-5 relative overflow-hidden transition-all duration-300 backdrop-blur-sm",
                                 isRunning 
                                     ? "bg-[#0c0c0c] border-red-600/30 shadow-[0_10px_40px_-10px_rgba(220,38,38,0.1)]" 
                                     : "bg-[#09090b] border-white/5 group-hover:border-white/10"
                             )}>
                                 {isRunning && <div className="absolute top-0 right-0 w-32 h-32 bg-red-600/10 blur-[60px] rounded-full pointer-events-none" />}
                                 
-                                <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-8 relative z-10">
-                                    <div className="space-y-4 min-w-[200px]">
+                                <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-4 md:gap-6 relative z-10">
+                                    <div className="space-y-2 min-w-[200px]">
                                         <div>
                                             <div className="flex items-center gap-3 mb-1">
-                                                <h3 className="text-xl font-black text-white uppercase tracking-tight">
+                                                <h3 className="text-lg font-black text-white uppercase tracking-tight">
                                                     {vehicle?.model || 'Modelo N/A'}
                                                 </h3>
-                                                <span className="text-[9px] font-black text-black bg-zinc-200 px-2 py-0.5 rounded uppercase tracking-widest">
+                                                <span className="text-[8px] font-black text-black bg-zinc-200 px-2 py-0.5 rounded uppercase tracking-widest">
                                                     {vehicle?.plate || '---'}
                                                 </span>
                                             </div>
-                                            <p className="text-xs font-bold text-zinc-500 uppercase flex items-center gap-2 mb-1">
+                                            <p className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-2 mb-0.5">
                                                 <div className="w-1.5 h-1.5 rounded-full bg-zinc-600" />
                                                 {customer?.name || 'Cliente'}
                                             </p>
-                                            <p className="text-[10px] font-bold text-zinc-600 uppercase flex items-center gap-2 pl-3.5">
+                                            <p className="text-[9px] font-bold text-zinc-600 uppercase flex items-center gap-2 pl-3.5">
                                                 <Phone size={10} />
                                                 {customer?.phone || 'Telefone N/A'}
                                             </p>
                                         </div>
                                     </div>
 
-                                    <div className="flex-1 border-l border-white/5 pl-0 lg:pl-8 space-y-2">
-                                        <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Procedimento</p>
-                                        <p className="text-lg font-bold text-zinc-200 uppercase leading-tight max-w-md">
+                                    <div className="flex-1 border-l border-white/5 pl-4 md:pl-6 space-y-1">
+                                        <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Procedimento</p>
+                                        <p className="text-base font-bold text-zinc-200 uppercase leading-tight max-w-md">
                                             {apt.serviceType}
                                         </p>
                                         {apt.observation && (
-                                            <p className="text-[10px] text-zinc-500 italic mt-1 border-l-2 border-red-900 pl-2">
+                                            <p className="text-[9px] text-zinc-500 italic mt-1 border-l-2 border-red-900 pl-2">
                                                 "{apt.observation}"
                                             </p>
                                         )}
                                     </div>
 
-                                    <div className="flex flex-col items-end gap-4 min-w-[150px]">
+                                    <div className="flex flex-col items-end gap-2 md:gap-3 min-w-[140px]">
                                         <div className={cn(
-                                            "px-4 py-1.5 rounded-full border text-[9px] font-black uppercase tracking-widest",
+                                            "px-3 py-1 rounded-full border text-[8px] font-black uppercase tracking-widest",
                                             apt.status === AppointmentStatus.NOVO ? "border-blue-500/30 text-blue-500 bg-blue-500/10" :
                                             apt.status === AppointmentStatus.CONFIRMADO ? "border-white/30 text-white bg-white/10" :
                                             apt.status === AppointmentStatus.EM_EXECUCAO ? "border-red-500 text-red-500 bg-red-500/10 animate-pulse" :
@@ -264,7 +264,7 @@ export const Schedule: React.FC<ScheduleProps> = ({
                                             {apt.status.replace('_', ' ')}
                                         </div>
 
-                                        <p className="text-xl font-black text-white tabular-nums tracking-tighter">
+                                        <p className="text-lg font-black text-white tabular-nums tracking-tighter">
                                             R$ {apt.price.toFixed(2)}
                                         </p>
                                         
@@ -277,10 +277,10 @@ export const Schedule: React.FC<ScheduleProps> = ({
                                                         e.stopPropagation();
                                                         handleRequestDelete(apt.id); 
                                                     }}
-                                                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-zinc-900 border border-white/10 hover:border-red-500 text-zinc-500 hover:text-red-500 transition-colors"
+                                                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-zinc-900 border border-white/10 hover:border-red-500 text-zinc-500 hover:text-red-500 transition-colors"
                                                     title="Excluir Definitivamente"
                                                 >
-                                                    <Trash2 size={14} />
+                                                    <Trash2 size={12} />
                                                 </button>
                                             )}
 
@@ -289,17 +289,17 @@ export const Schedule: React.FC<ScheduleProps> = ({
                                                     {apt.status !== AppointmentStatus.FINALIZADO && (
                                                          <button 
                                                             onClick={() => handleRequestCancel(apt.id)}
-                                                            className="w-8 h-8 flex items-center justify-center rounded-lg bg-zinc-900 border border-white/10 hover:border-orange-500 text-zinc-500 hover:text-orange-500 transition-colors"
+                                                            className="w-7 h-7 flex items-center justify-center rounded-lg bg-zinc-900 border border-white/10 hover:border-orange-500 text-zinc-500 hover:text-orange-500 transition-colors"
                                                             title="Cancelar"
                                                         >
-                                                            <X size={14} />
+                                                            <X size={12} />
                                                         </button>
                                                     )}
                                                     
                                                     {apt.status !== AppointmentStatus.EM_EXECUCAO && (
                                                         <button 
                                                             onClick={() => onUpdateStatus(apt.id, AppointmentStatus.EM_EXECUCAO)}
-                                                            className="px-4 py-1.5 bg-white text-black text-[9px] font-black uppercase rounded-lg hover:bg-zinc-200 transition-colors"
+                                                            className="px-3 py-1.5 bg-white text-black text-[9px] font-black uppercase rounded-lg hover:bg-zinc-200 transition-colors"
                                                         >
                                                             Iniciar
                                                         </button>
@@ -307,7 +307,7 @@ export const Schedule: React.FC<ScheduleProps> = ({
                                                     {apt.status === AppointmentStatus.EM_EXECUCAO && (
                                                         <button 
                                                             onClick={() => onUpdateStatus(apt.id, AppointmentStatus.FINALIZADO)}
-                                                            className="px-4 py-1.5 bg-green-600 text-white text-[9px] font-black uppercase rounded-lg hover:bg-green-500 transition-colors shadow-glow-green"
+                                                            className="px-3 py-1.5 bg-green-600 text-white text-[9px] font-black uppercase rounded-lg hover:bg-green-500 transition-colors shadow-glow-green"
                                                         >
                                                             Finalizar
                                                         </button>

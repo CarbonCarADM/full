@@ -96,15 +96,15 @@ export const Settings: React.FC<SettingsProps> = ({
   };
 
   return (
-    <div className="p-6 md:p-12 pb-32 animate-fade-in max-w-[1400px] mx-auto space-y-12">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-white/5 pb-8">
-        <div><h2 className="text-4xl font-black text-white uppercase tracking-tighter mb-2 flex items-center gap-4"><LayoutGrid className="text-red-600" size={32} /> Configurações</h2></div>
-        <button onClick={handleSaveSettings} disabled={savingSettings} className="bg-red-600 hover:bg-red-500 text-white px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 transition-all shadow-glow-red active:scale-95 w-full md:w-auto justify-center">{savingSettings ? <RefreshCw className="animate-spin" size={16}/> : <Save size={16} />} <span>Salvar Alterações</span></button>
+    <div className="p-6 md:p-8 pb-32 animate-fade-in max-w-[1400px] mx-auto space-y-8">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-white/5 pb-6">
+        <div><h2 className="text-3xl font-black text-white uppercase tracking-tighter mb-2 flex items-center gap-4"><LayoutGrid className="text-red-600" size={28} /> Configurações</h2></div>
+        <button onClick={handleSaveSettings} disabled={savingSettings} className="bg-red-600 hover:bg-red-500 text-white px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 transition-all shadow-glow-red active:scale-95 w-full md:w-auto justify-center">{savingSettings ? <RefreshCw className="animate-spin" size={16}/> : <Save size={16} />} <span>Salvar Alterações</span></button>
       </div>
 
       <div className="flex gap-2 p-1 bg-[#09090b] border border-white/5 rounded-2xl w-full md:w-fit overflow-x-auto custom-scrollbar">
         {[{ id: 'geral', label: 'Identidade', icon: Zap }, { id: 'operacional', label: 'Operacional', icon: Clock }, { id: 'servicos', label: 'Serviços', icon: ListPlus }, { id: 'assinatura', label: 'Assinatura', icon: Gem }].map((tab) => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={cn("px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all whitespace-nowrap", activeTab === tab.id ? "bg-white text-black shadow-glow" : "text-zinc-500 hover:text-white")}>
+            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={cn("px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all whitespace-nowrap", activeTab === tab.id ? "bg-white text-black shadow-glow" : "text-zinc-500 hover:text-white")}>
                 <tab.icon size={14} /> {tab.label}
             </button>
         ))}
@@ -112,17 +112,17 @@ export const Settings: React.FC<SettingsProps> = ({
 
       <div className="min-h-[500px]">
         {activeTab === 'geral' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="bg-[#09090b] border border-white/10 rounded-[2.5rem] p-8 space-y-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-[#09090b] border border-white/10 rounded-[2.5rem] p-6 space-y-6">
                     <h3 className="text-lg font-black text-white uppercase flex items-center gap-3"><Building2 size={18} className="text-red-600"/> Dados do Hangar</h3>
                     <div className="space-y-6">
                         <div className="flex flex-col md:flex-row gap-6 items-start">
-                            <div onClick={() => fileInputRef.current?.click()} className="w-24 h-24 rounded-2xl bg-zinc-950 border border-white/10 flex items-center justify-center cursor-pointer hover:border-red-600 transition-colors overflow-hidden relative group shrink-0">
+                            <div onClick={() => fileInputRef.current?.click()} className="w-20 h-20 rounded-2xl bg-zinc-950 border border-white/10 flex items-center justify-center cursor-pointer hover:border-red-600 transition-colors overflow-hidden relative group shrink-0">
                                 {localSettings.profile_image_url ? <img src={localSettings.profile_image_url} className="w-full h-full object-cover" /> : <ImageIcon className="text-zinc-700"/>}
                                 <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Upload size={16} className="text-white"/></div>
                             </div>
                             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={e => { const file = e.target.files?.[0]; if (!file) return; const r = new FileReader(); r.onloadend = () => setLocalSettings({...localSettings, profile_image_url: r.result as string}); r.readAsDataURL(file); }} />
-                            <div className="flex-1 space-y-4 w-full">
+                            <div className="flex-1 space-y-3 w-full">
                                 <input className="w-full bg-zinc-950 border border-white/5 rounded-xl px-4 py-3 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={localSettings.business_name} onChange={e => setLocalSettings({...localSettings, business_name: e.target.value})} placeholder="Nome da Estética" />
                                 <div className="grid grid-cols-2 gap-3">
                                     <input 
@@ -149,7 +149,7 @@ export const Settings: React.FC<SettingsProps> = ({
                         </div>
                     </div>
                 </div>
-                <div className="bg-[#09090b] border border-white/10 rounded-[2.5rem] p-8 space-y-6">
+                <div className="bg-[#09090b] border border-white/10 rounded-[2.5rem] p-6 space-y-4">
                     <h3 className="text-lg font-black text-white uppercase flex items-center gap-3"><ExternalLink size={18} className="text-red-600"/> Link de Agendamento</h3>
                     <div className="bg-black/50 border border-white/5 p-4 rounded-2xl flex items-center justify-between">
                         <code className="text-[10px] text-zinc-400 font-mono truncate mr-4">{bookingUrl}</code>
@@ -160,11 +160,11 @@ export const Settings: React.FC<SettingsProps> = ({
         )}
 
         {activeTab === 'operacional' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fade-in">
-                <div className="space-y-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
+                <div className="space-y-6">
                     {/* Capacidade */}
-                    <div className="bg-[#09090b] border border-white/10 rounded-[2.5rem] p-8">
-                        <h3 className="text-lg font-black text-white uppercase flex items-center gap-3 mb-6">
+                    <div className="bg-[#09090b] border border-white/10 rounded-[2.5rem] p-6">
+                        <h3 className="text-lg font-black text-white uppercase flex items-center gap-3 mb-4">
                             <Boxes size={18} className="text-red-600"/> Capacidade de Atendimento
                         </h3>
                         <div className="flex flex-col md:flex-row gap-6 items-center">
@@ -176,7 +176,7 @@ export const Settings: React.FC<SettingsProps> = ({
                                 <button onClick={() => setLocalSettings(s => ({...s, box_capacity: Math.max(1, (s.box_capacity || 1) - 1)}))} className="w-10 h-10 rounded-xl bg-zinc-900 text-white hover:bg-red-600 transition-colors flex items-center justify-center font-bold text-lg">-</button>
                                 <input 
                                     type="number" 
-                                    className="w-16 bg-transparent text-center text-xl font-black text-white outline-none appearance-none"
+                                    className="w-12 bg-transparent text-center text-xl font-black text-white outline-none appearance-none"
                                     value={localSettings.box_capacity || 1}
                                     onChange={(e) => setLocalSettings({...localSettings, box_capacity: Math.max(1, parseInt(e.target.value) || 1)})}
                                 />
@@ -185,13 +185,13 @@ export const Settings: React.FC<SettingsProps> = ({
                         </div>
                     </div>
 
-                    <div className="bg-[#09090b] border border-white/10 rounded-[2.5rem] p-8">
-                        <h3 className="text-lg font-black text-white uppercase flex items-center gap-3 mb-8"><Clock size={18} className="text-red-600"/> Horários Operacionais</h3>
-                        <div className="space-y-3">
+                    <div className="bg-[#09090b] border border-white/10 rounded-[2.5rem] p-6">
+                        <h3 className="text-lg font-black text-white uppercase flex items-center gap-3 mb-6"><Clock size={18} className="text-red-600"/> Horários Operacionais</h3>
+                        <div className="space-y-2">
                             {DAYS_OF_WEEK.map((day, idx) => {
                                 const rule = localSettings.operating_days?.find(r => r.dayOfWeek === idx) || { dayOfWeek: idx, isOpen: false, openTime: '08:00', closeTime: '18:00' };
                                 return (
-                                    <div key={day} className={cn("flex flex-col md:flex-row md:items-center gap-4 p-4 rounded-xl border transition-all", rule.isOpen ? "bg-zinc-950 border-white/10" : "bg-black border-white/5 opacity-40")}>
+                                    <div key={day} className={cn("flex flex-col md:flex-row md:items-center gap-4 p-3 rounded-xl border transition-all", rule.isOpen ? "bg-zinc-950 border-white/10" : "bg-black border-white/5 opacity-40")}>
                                         <div className="flex items-center gap-4">
                                             <button onClick={() => {
                                                 const newDays = [...(localSettings.operating_days || [])];
@@ -199,8 +199,8 @@ export const Settings: React.FC<SettingsProps> = ({
                                                 if (i >= 0) newDays[i] = { ...newDays[i], isOpen: !rule.isOpen };
                                                 else newDays.push({ dayOfWeek: idx, isOpen: true, openTime: '08:00', closeTime: '18:00' });
                                                 setLocalSettings({...localSettings, operating_days: newDays});
-                                            }} className={cn("w-10 h-6 rounded-full p-1 transition-all relative shrink-0", rule.isOpen ? "bg-red-600" : "bg-zinc-800")}>
-                                                <div className={cn("w-4 h-4 bg-white rounded-full shadow-md transition-all", rule.isOpen ? "translate-x-4" : "translate-x-0")} />
+                                            }} className={cn("w-8 h-5 rounded-full p-0.5 transition-all relative shrink-0", rule.isOpen ? "bg-red-600" : "bg-zinc-800")}>
+                                                <div className={cn("w-4 h-4 bg-white rounded-full shadow-md transition-all", rule.isOpen ? "translate-x-3" : "translate-x-0")} />
                                             </button>
                                             <span className="w-32 text-[10px] font-black text-white uppercase tracking-widest">{day}</span>
                                         </div>
@@ -228,9 +228,9 @@ export const Settings: React.FC<SettingsProps> = ({
                     </div>
                 </div>
 
-                <div className="bg-[#09090b] border border-white/10 rounded-[2.5rem] p-8 h-fit">
-                    <h3 className="text-lg font-black text-white uppercase flex items-center gap-3 mb-8"><CalendarX size={18} className="text-red-600"/> Datas de Exceção</h3>
-                    <div className="space-y-4 mb-8 p-4 bg-zinc-950 border border-white/5 rounded-2xl">
+                <div className="bg-[#09090b] border border-white/10 rounded-[2.5rem] p-6 h-fit">
+                    <h3 className="text-lg font-black text-white uppercase flex items-center gap-3 mb-6"><CalendarX size={18} className="text-red-600"/> Datas de Exceção</h3>
+                    <div className="space-y-4 mb-6 p-4 bg-zinc-950 border border-white/5 rounded-2xl">
                         <p className="text-[10px] font-bold text-zinc-500 uppercase mb-4">Bloquear agenda em dias específicos (Feriados/Folgas)</p>
                         <div className="grid grid-cols-2 gap-4">
                             <input type="date" className="bg-black border border-white/10 rounded-xl p-3 text-xs text-white" value={newBlockedDate.date} onChange={e => setNewBlockedDate({...newBlockedDate, date: e.target.value})} />
@@ -243,7 +243,7 @@ export const Settings: React.FC<SettingsProps> = ({
 
                     <div className="space-y-2">
                         {localSettings.blocked_dates?.map(d => (
-                            <div key={d.date} className="flex items-center justify-between p-4 bg-zinc-950 border border-white/5 rounded-xl group">
+                            <div key={d.date} className="flex items-center justify-between p-3 bg-zinc-950 border border-white/5 rounded-xl group">
                                 <div className="flex items-center gap-3">
                                     <CalendarIcon size={14} className="text-red-500" />
                                     <div>
@@ -263,7 +263,7 @@ export const Settings: React.FC<SettingsProps> = ({
         )}
 
         {activeTab === 'servicos' && (
-            <div className="space-y-8 animate-fade-in">
+            <div className="space-y-6 animate-fade-in">
                 <div className="flex justify-between items-center">
                     <div>
                         <h3 className="text-lg font-black text-white uppercase">Catálogo de Serviços</h3>
@@ -277,20 +277,20 @@ export const Settings: React.FC<SettingsProps> = ({
                         <p className="text-[10px] font-black uppercase tracking-widest">Limite do Plano Start atingido. Faça upgrade para adicionar mais serviços.</p>
                     </div>
                 )}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                     {services.map(s => (
-                        <div key={s.id} className="bg-[#09090b] border border-white/5 p-6 rounded-[2rem] hover:border-white/10 transition-all group relative">
+                        <div key={s.id} className="bg-[#09090b] border border-white/5 p-5 rounded-[1.5rem] hover:border-white/10 transition-all group relative">
                             <button 
                                 onClick={(e) => { 
                                     e.stopPropagation();
                                     onDeleteService(s.id); 
                                 }} 
-                                className="absolute top-6 right-6 p-2 text-zinc-700 hover:text-red-500 hover:bg-red-900/10 rounded-lg transition-all z-10"
+                                className="absolute top-5 right-5 p-2 text-zinc-700 hover:text-red-500 hover:bg-red-900/10 rounded-lg transition-all z-10"
                             >
-                                <Trash2 size={16}/>
+                                <Trash2 size={14}/>
                             </button>
                             <h4 className="text-sm font-black text-white uppercase mb-1">{s.name}</h4>
-                            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-4">{s.duration_minutes} min • R$ {Number(s.price).toFixed(2)}</p>
+                            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">{s.duration_minutes} min • R$ {Number(s.price).toFixed(2)}</p>
                             <p className="text-xs text-zinc-600 leading-relaxed line-clamp-2">{s.description || 'Sem descrição.'}</p>
                         </div>
                     ))}

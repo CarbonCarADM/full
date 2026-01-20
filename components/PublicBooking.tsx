@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { Check, ChevronLeft, Star, MapPin, Search, Zap, X, User, ArrowRight, Clock, Loader2, CalendarX, History, LayoutGrid, Bell, Play, MessageSquare, LogOut, Key, Building2, Phone, Filter, Instagram, ExternalLink, Calendar as CalendarIcon, Wallet, Lock, Car, Wrench, AlertTriangle, Save, ChevronRight as ChevronRightIcon, Ban, Info } from 'lucide-react';
-import { BusinessSettings, ServiceItem, Appointment, PortfolioItem, Review, AppointmentStatus } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { Check, ChevronLeft, Star, MapPin, Search, Zap, X, User, ArrowRight, Clock, Loader2, CalendarX, History, LayoutGrid, Bell, Phone, Filter, Instagram, Calendar as CalendarIcon, Wrench, Car, LogOut, Key, MessageSquare, Send, Image as ImageIcon, ThumbsUp } from 'lucide-react';
+import { BusinessSettings, ServiceItem, Appointment, PortfolioItem, Review } from '../types';
 import { cn, formatPhone, formatPlate } from '../lib/utils';
 import { supabase } from '../lib/supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -26,6 +26,15 @@ interface CalendarDay {
     isPast: boolean;
 }
 
+interface Notification {
+    id: string;
+    title: string;
+    message: string;
+    time: string;
+    read: boolean;
+    type: 'START' | 'FINISH' | 'INFO';
+}
+
 // Helper: Converte "HH:mm" para minutos totais do dia
 const timeToMinutes = (time: string): number => {
     const [h, m] = time.split(':').map(Number);
@@ -39,6 +48,15 @@ const minutesToTime = (minutes: number): string => {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 };
 
+// Helper: Formata duração (ex: 90 -> 1h 30min)
+const formatDuration = (minutes: number): string => {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    if (h > 0 && m > 0) return `${h}h ${m}min`;
+    if (h > 0) return `${h}h`;
+    return `${m}min`;
+};
+
 export const PublicBooking: React.FC<PublicBookingProps> = ({ 
     currentUser, businessSettings, services, portfolio, 
     existingAppointments = [],
@@ -49,9 +67,9 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
     const [step, setStep] = useState(1); // Booking Step
     const [loading, setLoading] = useState(false);
     const [agendaTab, setAgendaTab] = useState<'UPCOMING' | 'HISTORY'>('UPCOMING');
+    const [galleryTab, setGalleryTab] = useState<'PHOTOS' | 'REVIEWS'>('PHOTOS');
     
     // Booking Data
-    // FIX: Typing as any to prevent TS2339
     const [selectedService, setSelectedService] = useState<any>(null);
     const [selectedDate, setSelectedDate] = useState<string>('');
     const [selectedTime, setSelectedTime] = useState<string>(''); 
@@ -60,16 +78,25 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
     
     // Calendar State
     const [viewDate, setViewDate] = useState(new Date());
-
-    // UI Helpers
     const [calendarDays, setCalendarDays] = useState<CalendarDay[]>([]);
     const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+    const [slotOccupancy, setSlotOccupancy] = useState<Record<string, number>>({}); 
     
-    // MULTI-BOX STATE
-    const [slotOccupancy, setSlotOccupancy] = useState<Record<string, number>>({}); // Armazena contagem exata por slot
-    
+    // User Data
     const [userVehicle, setUserVehicle] = useState<string>('---');
     const [servicesCount, setServicesCount] = useState(0);
+    const [dbReviews, setDbReviews] = useState<Review[]>([]);
+    const [dbUserAppointments, setDbUserAppointments] = useState<any[]>([]);
+
+    // Notification State
+    const [notifications, setNotifications] = useState<Notification[]>([]);
+    const [showNotifications, setShowNotifications] = useState(false);
+    const [hasUnread, setHasUnread] = useState(false);
+
+    // Review Form State
+    const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+    const [reviewForm, setReviewForm] = useState({ rating: 5, comment: '', name: '' });
+    const [submittingReview, setSubmittingReview] = useState(false);
 
     // Password Modal State
     const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
@@ -77,143 +104,19 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
     const [passwordStatus, setPasswordStatus] = useState<'IDLE' | 'SAVING' | 'SUCCESS' | 'ERROR'>('IDLE');
     const [passwordFeedback, setPasswordFeedback] = useState('');
 
-    // Real Data
-    // FIX: Typing as any[] to prevent TS2339
-    const [dbReviews, setDbReviews] = useState<any[]>([]);
-    const [dbUserAppointments, setDbUserAppointments] = useState<any[]>([]);
-    
     // --- EFFECTS ---
-    
-    // 1. Gera o Calendário Baseado no Mês Selecionado (viewDate)
-    useEffect(() => {
-        const days: CalendarDay[] = [];
-        const opDays = businessSettings.operating_days || [];
-        const blockedDates = businessSettings.blocked_dates || [];
-        
-        // Data atual real para comparação (evitar agendar no passado)
-        const realToday = new Date();
-        realToday.setHours(0, 0, 0, 0);
 
-        const year = viewDate.getFullYear();
-        const month = viewDate.getMonth();
-        
-        // Quantos dias tem no mês atual
-        const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-        for (let i = 1; i <= daysInMonth; i++) {
-            // Cria data em UTC para garantir a string correta YYYY-MM-DD
-            // Mas usa setFullYear/Month/Date locais para evitar pular dia
-            const date = new Date(year, month, i);
-            
-            const y = date.getFullYear();
-            const m = String(date.getMonth() + 1).padStart(2, '0');
-            const d = String(date.getDate()).padStart(2, '0');
-            const dateStr = `${y}-${m}-${d}`;
-            
-            const dayOfWeek = date.getDay(); // 0 = Domingo
-
-            // Verifica se está aberto neste dia da semana
-            const rule = opDays.find(r => r.dayOfWeek === dayOfWeek);
-            const isOpenDay = rule ? rule.isOpen : false; 
-
-            // Verifica bloqueios manuais (Feriados)
-            const isBlocked = blockedDates.some(bd => bd.date === dateStr);
-            
-            // Verifica se é passado
-            const isPast = date < realToday;
-
-            days.push({ 
-                dateStr, 
-                dayName: date.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '').toUpperCase(), 
-                dayNumber: d,
-                isOpen: isOpenDay && !isBlocked && !isPast,
-                isPast: isPast
-            });
-        }
-        setCalendarDays(days);
-        
-        // Auto-seleciona o primeiro dia disponível se a data atual não estiver no mês visível
-        // Ou se nenhum dia estiver selecionado
-        if (!selectedDate || new Date(selectedDate).getMonth() !== month) {
-             const firstAvailable = days.find(d => d.isOpen);
-             if (firstAvailable) setSelectedDate(firstAvailable.dateStr);
-             else setSelectedDate('');
-        }
-    }, [businessSettings, viewDate]);
-
-    // 2. Gera Slots de Horário e Verifica Disponibilidade Real (SIMPLE STRING MATCH)
-    useEffect(() => {
-        if (!selectedDate || !businessSettings.id) return;
-
-        const fetchAndGenerateSlots = async () => {
-            // Lógica para determinar o dia da semana da data selecionada
-            const [y, m, d] = selectedDate.split('-').map(Number);
-            const dateObj = new Date(y, m - 1, d); 
-            const dayOfWeek = dateObj.getDay();
-            
-            const rule = businessSettings.operating_days?.find(r => r.dayOfWeek === dayOfWeek);
-
-            // 2.1. Gera a grade base de horários (Slots Teóricos)
-            if (!rule || !rule.isOpen) {
-                setAvailableSlots([]);
-                setSlotOccupancy({});
-                return;
-            }
-
-            const slots: string[] = [];
-            const interval = businessSettings.slot_interval_minutes || 60;
-            
-            // Lógica MATEMÁTICA de geração de horário (Minutos desde 00:00)
-            const startMins = timeToMinutes(rule.openTime); 
-            const endMins = timeToMinutes(rule.closeTime);
-
-            for (let currentMins = startMins; currentMins < endMins; currentMins += interval) {
-                slots.push(minutesToTime(currentMins));
-            }
-            
-            setAvailableSlots(slots);
-
-            // 2.2. Busca Agendamentos Reais no Banco
-            const { data: busyData, error } = await supabase
-                .from('appointments')
-                .select('time')
-                .eq('business_id', businessSettings.id)
-                .eq('date', selectedDate)
-                .neq('status', 'CANCELADO');
-
-            if (error) {
-                console.error("Erro ao buscar disponibilidade:", error);
-                return;
-            }
-
-            const occupancyMap: Record<string, number> = {};
-
-            if (busyData) {
-                slots.forEach(slotTime => {
-                    const count = busyData.filter(apt => {
-                        if (!apt.time) return false;
-                        const aptTimeShort = apt.time.slice(0, 5); 
-                        return aptTimeShort === slotTime;
-                    }).length;
-
-                    occupancyMap[slotTime] = count;
-                });
-            }
-
-            setSlotOccupancy(occupancyMap);
-        };
-
-        fetchAndGenerateSlots();
-        setSelectedTime(''); // Reseta horário ao trocar dia
-    }, [selectedDate, businessSettings]);
-
-
+    // Fetch Initial Data
     useEffect(() => {
         const fetchRealData = async () => {
             if (!businessSettings.id) return;
 
-            // Reviews
-            const { data: revs } = await supabase.from('reviews').select('*').eq('business_id', businessSettings.id).order('created_at', { ascending: false });
+            // Fetch Reviews
+            const { data: revs } = await supabase
+                .from('reviews')
+                .select('*')
+                .eq('business_id', businessSettings.id)
+                .order('created_at', { ascending: false });
             if (revs) setDbReviews(revs as any);
 
             // User History & Profile Data
@@ -226,6 +129,9 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                     .maybeSingle();
 
                 if (customer) {
+                    // Pre-fill user data
+                    setReviewForm(prev => ({ ...prev, name: customer.name }));
+                    
                     if (customer.vehicles && customer.vehicles.length > 0) {
                         const v = customer.vehicles[0];
                         const model = v.model || 'Modelo N/A';
@@ -255,6 +161,7 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                 } else {
                     if (currentUser.user_metadata?.full_name) {
                         setGuestForm(prev => ({ ...prev, name: currentUser.user_metadata.full_name }));
+                        setReviewForm(prev => ({ ...prev, name: currentUser.user_metadata.full_name }));
                     }
                     if (currentUser.user_metadata?.phone) {
                         setGuestForm(prev => ({ ...prev, phone: currentUser.user_metadata.phone }));
@@ -263,33 +170,97 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
             }
         };
         fetchRealData();
-    }, [businessSettings.id, currentUser, currentScreen]);
+    }, [businessSettings.id, currentUser]);
 
-    // --- COMPUTED DATA ---
-    const upcomingAppointments = dbUserAppointments.filter(a => a.status !== 'FINALIZADO' && a.status !== 'CANCELADO');
-    const historyAppointments = dbUserAppointments.filter(a => a.status === 'FINALIZADO' || a.status === 'CANCELADO');
+    // Calendar Generation
+    useEffect(() => {
+        const days: CalendarDay[] = [];
+        const opDays = businessSettings.operating_days || [];
+        const blockedDates = businessSettings.blocked_dates || [];
+        const realToday = new Date();
+        realToday.setHours(0, 0, 0, 0);
+
+        const year = viewDate.getFullYear();
+        const month = viewDate.getMonth();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+        for (let i = 1; i <= daysInMonth; i++) {
+            const date = new Date(year, month, i);
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            const dateStr = `${y}-${m}-${d}`;
+            const dayOfWeek = date.getDay(); 
+            const rule = opDays.find(r => r.dayOfWeek === dayOfWeek);
+            const isOpenDay = rule ? rule.isOpen : false; 
+            const isBlocked = blockedDates.some(bd => bd.date === dateStr);
+            const isPast = date < realToday;
+
+            days.push({ 
+                dateStr, 
+                dayName: date.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '').toUpperCase(), 
+                dayNumber: d,
+                isOpen: isOpenDay && !isBlocked && !isPast,
+                isPast: isPast
+            });
+        }
+        setCalendarDays(days);
+        
+        if (!selectedDate || new Date(selectedDate).getMonth() !== month) {
+             const firstAvailable = days.find(d => d.isOpen);
+             if (firstAvailable) setSelectedDate(firstAvailable.dateStr);
+             else setSelectedDate('');
+        }
+    }, [businessSettings, viewDate]);
+
+    // Slots Generation
+    useEffect(() => {
+        if (!selectedDate || !businessSettings.id) return;
+
+        const fetchAndGenerateSlots = async () => {
+            const [y, m, d] = selectedDate.split('-').map(Number);
+            const dateObj = new Date(y, m - 1, d); 
+            const dayOfWeek = dateObj.getDay();
+            const rule = businessSettings.operating_days?.find(r => r.dayOfWeek === dayOfWeek);
+
+            if (!rule || !rule.isOpen) {
+                setAvailableSlots([]);
+                setSlotOccupancy({});
+                return;
+            }
+
+            const slots: string[] = [];
+            const interval = businessSettings.slot_interval_minutes || 60;
+            const startMins = timeToMinutes(rule.openTime); 
+            const endMins = timeToMinutes(rule.closeTime);
+
+            for (let currentMins = startMins; currentMins < endMins; currentMins += interval) {
+                slots.push(minutesToTime(currentMins));
+            }
+            setAvailableSlots(slots);
+
+            const { data: busyData } = await supabase
+                .from('appointments')
+                .select('time')
+                .eq('business_id', businessSettings.id)
+                .eq('date', selectedDate)
+                .neq('status', 'CANCELADO');
+
+            const occupancyMap: Record<string, number> = {};
+            if (busyData) {
+                slots.forEach(slotTime => {
+                    const count = busyData.filter(apt => apt.time?.slice(0, 5) === slotTime).length;
+                    occupancyMap[slotTime] = count;
+                });
+            }
+            setSlotOccupancy(occupancyMap);
+        };
+
+        fetchAndGenerateSlots();
+        setSelectedTime('');
+    }, [selectedDate, businessSettings]);
 
     // --- HANDLERS ---
-    const changeMonth = (delta: number) => {
-        const newDate = new Date(viewDate);
-        newDate.setMonth(newDate.getMonth() + delta);
-        
-        // Bloqueio opcional: não voltar para meses anteriores ao atual
-        const today = new Date();
-        if (newDate.getMonth() < today.getMonth() && newDate.getFullYear() <= today.getFullYear()) {
-            // Se quiser permitir voltar para ver histórico, remova este if
-            // Mas para booking, geralmente não queremos ir muito para trás
-            // return; 
-        }
-        
-        setViewDate(newDate);
-    };
-
-    const startBooking = (service: ServiceItem) => {
-        setSelectedService(service);
-        setCurrentScreen('BOOKING');
-        setStep(1);
-    };
 
     const handleFinalize = async () => {
         if (!selectedService || !selectedDate || !selectedTime) return;
@@ -304,39 +275,52 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
         setLoading(false);
     };
 
+    const handleSubmitReview = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setSubmittingReview(true);
+        
+        const payload = {
+            business_id: businessSettings.id,
+            customer_name: reviewForm.name || 'Anônimo',
+            rating: reviewForm.rating,
+            comment: reviewForm.comment,
+            // appointment_id logic optional
+        };
+
+        const { data, error } = await supabase.from('reviews').insert(payload).select().single();
+        
+        if (!error && data) {
+            setDbReviews(prev => [data as Review, ...prev]);
+            setIsReviewModalOpen(false);
+            setReviewForm(prev => ({...prev, comment: '', rating: 5}));
+        } else {
+            alert("Erro ao enviar avaliação.");
+        }
+        setSubmittingReview(false);
+    };
+
     const handleSaveNewPassword = async (e: React.FormEvent) => {
         e.preventDefault();
         setPasswordStatus('SAVING');
-        setPasswordFeedback('');
-
-        if (passwordForm.newPassword.length < 6) {
+        if (passwordForm.newPassword.length < 6 || passwordForm.newPassword !== passwordForm.confirmPassword) {
             setPasswordStatus('ERROR');
-            setPasswordFeedback('A senha deve ter no mínimo 6 caracteres.');
+            setPasswordFeedback('Verifique a senha.');
             return;
         }
-
-        if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-            setPasswordStatus('ERROR');
-            setPasswordFeedback('As senhas não coincidem.');
-            return;
-        }
-
         try {
             const { error } = await supabase.auth.updateUser({ password: passwordForm.newPassword });
             if (error) throw error;
-            
             setPasswordStatus('SUCCESS');
-            setPasswordFeedback('Senha atualizada com sucesso!');
-            setTimeout(() => {
-                setIsChangePasswordOpen(false);
-                setPasswordStatus('IDLE');
-                setPasswordForm({ newPassword: '', confirmPassword: '' });
-                setPasswordFeedback('');
-            }, 1500);
+            setTimeout(() => { setIsChangePasswordOpen(false); setPasswordStatus('IDLE'); }, 1500);
         } catch (error: any) {
             setPasswordStatus('ERROR');
-            setPasswordFeedback(error.message || 'Erro ao atualizar senha.');
         }
+    };
+
+    const changeMonth = (delta: number) => {
+        const newDate = new Date(viewDate);
+        newDate.setMonth(newDate.getMonth() + delta);
+        setViewDate(newDate);
     };
 
     const handleOpenWhatsapp = () => {
@@ -345,703 +329,448 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
         }
     };
 
-    // --- LOADING STATE ---
-    if (!businessSettings.id) {
-        return (
-            <div className="min-h-screen bg-[#020202] flex items-center justify-center font-sans p-4">
-                <div className="flex flex-col items-center gap-6">
-                    <Loader2 className="w-10 h-10 text-red-600 animate-spin" />
-                    <p className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.3em]">Carregando Hangar...</p>
-                    <button onClick={onExit} className="px-6 py-3 bg-zinc-900 border border-white/10 rounded-xl text-[9px] font-bold text-zinc-400 hover:text-white uppercase tracking-widest transition-all">Sair / Cancelar</button>
-                </div>
-            </div>
-        );
-    }
+    // Derived Lists for Agenda
+    const upcomingAppointments = dbUserAppointments.filter(a => 
+        ['NOVO', 'CONFIRMADO', 'EM_EXECUCAO'].includes(a.status)
+    ).sort((a, b) => new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime());
 
-    // --- COMPONENTS ---
+    const historyAppointments = dbUserAppointments.filter(a => 
+        ['FINALIZADO', 'CANCELADO'].includes(a.status)
+    ).sort((a, b) => new Date(`${b.date}T${b.time}`).getTime() - new Date(`${a.date}T${a.time}`).getTime());
+
+    // --- RENDER HELPERS ---
+
     const BottomNav = () => (
-        <div className="absolute bottom-6 inset-x-6 z-40">
-            <div className="bg-[#121212]/90 backdrop-blur-xl border border-white/5 rounded-[2rem] h-20 px-6 flex items-center justify-between shadow-2xl">
-                <button onClick={() => setCurrentScreen('HOME')} className={cn("flex flex-col items-center gap-1 transition-all", currentScreen === 'HOME' ? "text-white scale-110" : "text-zinc-600 hover:text-white")}>
-                    <LayoutGrid size={20} fill={currentScreen === 'HOME' ? "currentColor" : "none"} />
-                    <span className="text-[9px] font-bold uppercase tracking-wider">Home</span>
-                </button>
-                <button onClick={() => setCurrentScreen('GALLERY')} className={cn("flex flex-col items-center gap-1 transition-all", currentScreen === 'GALLERY' ? "text-white scale-110" : "text-zinc-600 hover:text-white")}>
-                    <Search size={20} />
-                    <span className="text-[9px] font-bold uppercase tracking-wider">Galeria</span>
-                </button>
-                <div className="relative -top-6">
-                    <button onClick={() => { setSelectedService(null); setCurrentScreen('BOOKING'); setStep(1); }} className="w-16 h-16 bg-red-600 rounded-full flex items-center justify-center text-white shadow-[0_10px_30px_rgba(220,38,38,0.5)] border-4 border-[#020202] hover:scale-105 transition-transform">
-                        <Zap size={24} fill="currentColor" />
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-40 w-full max-w-[340px] px-4">
+            <div className="bg-[#121212]/90 backdrop-blur-xl border border-white/5 rounded-full h-16 flex items-center justify-evenly shadow-2xl">
+                {[
+                    { id: 'HOME', icon: LayoutGrid, label: 'Home' },
+                    { id: 'GALLERY', icon: Search, label: 'Galeria' },
+                    { id: 'AGENDA', icon: CalendarIcon, label: 'Agenda' },
+                    { id: 'PROFILE', icon: User, label: 'Perfil' },
+                ].map((item) => (
+                    <button 
+                        key={item.id}
+                        onClick={() => setCurrentScreen(item.id as any)} 
+                        className="relative flex flex-col items-center justify-center w-14 h-full group"
+                    >
+                        <item.icon 
+                            size={20} 
+                            className={cn(
+                                "transition-all duration-300", 
+                                currentScreen === item.id ? "text-white -translate-y-1" : "text-zinc-500 group-hover:text-zinc-300"
+                            )} 
+                            fill={currentScreen === item.id && item.id !== 'GALLERY' && item.id !== 'AGENDA' ? "currentColor" : "none"}
+                        />
+                        {currentScreen === item.id && (
+                            <motion.div layoutId="nav-dot" className="absolute bottom-3 w-1 h-1 bg-red-600 rounded-full shadow-[0_0_8px_red]" />
+                        )}
                     </button>
-                </div>
-                <button onClick={() => setCurrentScreen('AGENDA')} className={cn("flex flex-col items-center gap-1 transition-all", currentScreen === 'AGENDA' ? "text-white scale-110" : "text-zinc-600 hover:text-white")}>
-                    <CalendarIcon size={20} />
-                    <span className="text-[9px] font-bold uppercase tracking-wider">Agenda</span>
-                </button>
-                <button onClick={() => setCurrentScreen('PROFILE')} className={cn("flex flex-col items-center gap-1 transition-all", currentScreen === 'PROFILE' ? "text-white scale-110" : "text-zinc-600 hover:text-white")}>
-                    <User size={20} fill={currentScreen === 'PROFILE' ? "currentColor" : "none"} />
-                    <span className="text-[9px] font-bold uppercase tracking-wider">Perfil</span>
-                </button>
+                ))}
             </div>
         </div>
     );
 
-    // --- SCREEN: HOME ---
-    if (currentScreen === 'HOME') {
+    if (!businessSettings.id) {
         return (
             <div className="min-h-screen bg-[#020202] flex items-center justify-center font-sans p-4">
-                <div className="w-full max-w-[450px] h-screen md:h-[850px] md:rounded-[3rem] bg-[#020202] border border-white/5 overflow-hidden relative shadow-2xl flex flex-col">
-                    
-                    {/* Header */}
-                    <div className="pt-12 px-8 pb-6 flex justify-between items-start">
-                        <div>
-                            <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 mb-1">
-                                <MapPin size={10} className="text-red-600" /> {businessSettings.address ? businessSettings.address.split(',')[0] : 'Brasil'}
-                            </p>
-                            <h2 className="text-xl font-black text-white uppercase tracking-tight">
-                                Olá, {currentUser ? currentUser.email?.split('@')[0] : 'Visitante'}
-                            </h2>
-                        </div>
-                        <div className="w-10 h-10 rounded-full bg-zinc-900 border border-white/10 flex items-center justify-center relative">
-                            {businessSettings.profile_image_url ? (
-                                <img src={businessSettings.profile_image_url} className="w-full h-full rounded-full object-cover" />
-                            ) : (
-                                <Bell size={18} className="text-white" />
-                            )}
-                            <div className="absolute top-2 right-2 w-2 h-2 bg-red-600 rounded-full border border-black" />
-                        </div>
-                    </div>
-
-                    {/* Scrollable Content */}
-                    <div className="flex-1 overflow-y-auto custom-scrollbar pb-32 space-y-8">
-                        
-                        {/* Search Bar */}
-                        <div className="px-8">
-                            <div className="bg-[#121212] border border-white/5 rounded-2xl h-14 flex items-center px-4 gap-3 text-zinc-500">
-                                <Search size={20} />
-                                <input placeholder="Buscar serviço..." className="bg-transparent w-full h-full outline-none text-xs font-bold uppercase text-white placeholder:text-zinc-700" />
-                                <Filter size={18} />
-                            </div>
-                        </div>
-
-                        {/* BUSINESS CARD (Holographic Premium) */}
-                        <div className="px-8 perspective-1000">
-                            <div className="w-full aspect-[1.8/1] rounded-[2.5rem] relative group transition-all duration-500 hover:scale-[1.02]">
-                                
-                                {/* Animated Border Gradient (Pseudo-border) */}
-                                <div className="absolute -inset-[1px] rounded-[2.5rem] bg-gradient-to-br from-white/20 via-white/5 to-transparent opacity-50 blur-[1px]" />
-                                
-                                {/* Main Glass Container */}
-                                <div className="absolute inset-0 rounded-[2.5rem] bg-[#050505]/80 backdrop-blur-2xl overflow-hidden flex flex-col justify-between p-7 border border-white/5 shadow-[0_20px_40px_-10px_rgba(0,0,0,0.5)]">
-                                    
-                                    {/* 1. Texture & Atmosphere */}
-                                    <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.07] mix-blend-overlay pointer-events-none" />
-                                    
-                                    {/* Ambient Red Glow (Top Right) */}
-                                    <div className="absolute -top-[20%] -right-[20%] w-[70%] h-[70%] bg-red-600/10 blur-[80px] rounded-full pointer-events-none group-hover:bg-red-600/20 transition-all duration-700" />
-                                    
-                                    {/* Subtle Shine (Top Left) */}
-                                    <div className="absolute -top-[10%] -left-[10%] w-[50%] h-[50%] bg-white/5 blur-[60px] rounded-full pointer-events-none" />
-
-                                    {/* 2. Top Section */}
-                                    <div className="flex justify-between items-start relative z-10">
-                                        <div className="flex items-center gap-5">
-                                            {/* Avatar Squircle */}
-                                            <div className="w-14 h-14 rounded-2xl bg-zinc-900/50 backdrop-blur-md border border-white/10 flex items-center justify-center overflow-hidden shadow-inner group-hover:border-white/20 transition-colors">
-                                                    {businessSettings.profile_image_url ? (
-                                                    <img src={businessSettings.profile_image_url} className="w-full h-full object-cover" />
-                                                    ) : (
-                                                    <span className="text-xl font-black text-white">{businessSettings.business_name.charAt(0)}</span>
-                                                    )}
-                                            </div>
-                                            
-                                            {/* Titles */}
-                                            <div>
-                                                <h3 className="text-lg font-black text-white uppercase tracking-wider drop-shadow-sm">{businessSettings.business_name}</h3>
-                                                <p className="text-[8px] font-bold text-zinc-500 uppercase tracking-[0.3em] mt-0.5">Estética Automotiva</p>
-                                            </div>
-                                        </div>
-
-                                        {/* Glass Button (Call) */}
-                                        <div 
-                                            onClick={handleOpenWhatsapp} 
-                                            className="cursor-pointer w-12 h-12 rounded-full bg-black/20 backdrop-blur-md border border-white/10 flex items-center justify-center text-green-500 shadow-[inset_0_0_15px_rgba(0,0,0,1)] hover:shadow-[0_0_20px_rgba(34,197,94,0.3)] hover:border-green-500/30 hover:bg-green-500/10 hover:text-green-400 transition-all duration-300 group/btn"
-                                        >
-                                            <Phone size={18} className="drop-shadow-[0_0_5px_rgba(34,197,94,0.5)] group-hover/btn:scale-110 transition-transform" />
-                                        </div>
-                                    </div>
-
-                                    {/* 3. Bottom Section (Info) */}
-                                    <div className="relative z-10 space-y-3 pl-1">
-                                        {/* Instagram */}
-                                        <div className="flex items-center gap-4 group/item">
-                                            <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center border border-white/5 group-hover/item:border-white/20 transition-colors">
-                                                <Instagram size={14} className="text-zinc-400 group-hover/item:text-white transition-colors" />
-                                            </div>
-                                            <div>
-                                                <span className="block text-[8px] font-black text-zinc-600 uppercase tracking-widest">Instagram</span>
-                                                <span className="text-[10px] font-bold text-zinc-300 tracking-wider">
-                                                    {businessSettings.configs?.instagram || '@' + businessSettings.business_name.replace(/\s+/g, '').toLowerCase()}
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        {/* Location */}
-                                        <div className="flex items-center gap-4 group/item">
-                                            <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center border border-white/5 group-hover/item:border-white/20 transition-colors">
-                                                <MapPin size={14} className="text-zinc-400 group-hover/item:text-white transition-colors" />
-                                            </div>
-                                            <div>
-                                                <span className="block text-[8px] font-black text-zinc-600 uppercase tracking-widest">Localização</span>
-                                                <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider truncate max-w-[200px] block">
-                                                    {businessSettings.address ? businessSettings.address.split(',')[0] : "Endereço não informado"}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    {/* Bottom Gradient Border Accent */}
-                                    <div className="absolute bottom-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-50" />
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Services Grid */}
-                        <div className="px-8">
-                            <div className="flex justify-between items-end mb-6">
-                                <h3 className="text-lg font-black text-white uppercase">Serviços</h3>
-                                <button className="text-[10px] font-bold text-red-600 uppercase tracking-widest">Ver Todos</button>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                {services.length === 0 && <p className="col-span-2 text-zinc-500 text-xs text-center py-10">Nenhum serviço disponível</p>}
-                                {services.map((s: ServiceItem) => (
-                                    <button 
-                                        key={s.id}
-                                        onClick={() => startBooking(s)} 
-                                        className="bg-[#121212] hover:bg-[#181818] border border-white/5 p-5 rounded-[2rem] flex flex-col items-start gap-4 transition-all active:scale-95 group"
-                                    >
-                                        <div className="w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center group-hover:bg-red-600 transition-colors">
-                                            <Zap size={18} className="text-white" fill="currentColor" />
-                                        </div>
-                                        <div>
-                                            <h4 className="text-xs font-black text-white uppercase leading-tight mb-1 text-left">{s.name}</h4>
-                                            <p className="text-[10px] text-zinc-500 font-bold uppercase text-left">{s.duration_minutes} min</p>
-                                        </div>
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-
-                    <BottomNav />
-                </div>
+                <Loader2 className="w-8 h-8 text-red-600 animate-spin" />
             </div>
         );
     }
 
-    // --- SCREEN: BOOKING FLOW ---
-    if (currentScreen === 'BOOKING') {
-        return (
-            <div className="min-h-screen bg-[#020202] flex items-center justify-center font-sans p-4">
-                <div className="w-full max-w-[450px] h-screen md:h-[850px] md:rounded-[3rem] bg-[#020202] border border-white/5 overflow-hidden relative shadow-2xl flex flex-col">
-                    
-                    {/* Top Bar */}
-                    <div className="pt-12 px-8 pb-4 flex items-center justify-between">
-                         <button onClick={() => { if(step > 1) setStep(step-1); else setCurrentScreen('HOME'); }} className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center text-white hover:bg-white/5">
-                             <ChevronLeft size={20} />
-                         </button>
-                         <h2 className="text-sm font-black text-white uppercase tracking-widest">Agendamento</h2>
-                         <div className="w-10" />
-                    </div>
-
-                    {step === 4 ? (
-                        /* SUCCESS SCREEN */
-                        <div className="flex-1 flex flex-col items-center justify-center p-12 text-center animate-in zoom-in-95 duration-500">
-                             <div className="w-32 h-32 bg-green-500/10 rounded-full flex items-center justify-center border border-green-500/20 mb-8 relative">
-                                 <div className="absolute inset-0 bg-green-500/20 blur-xl rounded-full" />
-                                 <Check size={48} className="text-green-500 relative z-10" strokeWidth={3} />
-                             </div>
-                             <h2 className="text-3xl font-black text-white uppercase mb-4 tracking-tight">Confirmado!</h2>
-                             <p className="text-zinc-500 text-xs font-medium leading-relaxed mb-12">
-                                 Seu agendamento para <strong>{selectedService?.name}</strong> foi realizado com sucesso.
-                                 <br/>Data: {new Date(selectedDate + 'T12:00:00').toLocaleDateString('pt-BR')} às {selectedTime}.
-                             </p>
-                             <button onClick={() => { setCurrentScreen('HOME'); setStep(1); }} className="w-full py-5 bg-white text-black rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-zinc-200 transition-all">
-                                 Voltar para Home
-                             </button>
-                        </div>
+    return (
+        <div className="min-h-screen bg-[#020202] flex flex-col items-center font-sans">
+            {/* MASTER CONTAINER - SIMULATES MOBILE APP */}
+            <div className="w-full max-w-md h-full md:h-[850px] md:my-auto md:rounded-[3rem] bg-[#020202] border-x border-white/5 md:border border-white/5 relative shadow-2xl flex flex-col overflow-hidden">
+                
+                {/* --- HEADER (DYNAMIC) --- */}
+                <div className="pt-10 md:pt-12 px-5 md:px-8 pb-4 flex justify-between items-center shrink-0 z-30 bg-[#020202]/95 backdrop-blur-sm">
+                    {currentScreen === 'BOOKING' || currentScreen === 'GALLERY' && isReviewModalOpen ? (
+                        <button onClick={() => { 
+                            if(currentScreen === 'BOOKING') {
+                                if(step > 1) setStep(step-1); else setCurrentScreen('HOME'); 
+                            } else {
+                                setIsReviewModalOpen(false);
+                            }
+                        }} className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center text-white hover:bg-white/5 transition-all">
+                            <ChevronLeft size={18} />
+                        </button>
                     ) : (
-                        /* FORM CONTENT */
-                        <div className="flex-1 overflow-y-auto custom-scrollbar px-8 py-4 space-y-8">
+                        <div>
+                            {currentScreen === 'HOME' && <h2 className="text-lg font-black text-white uppercase tracking-tight">Olá, {currentUser ? currentUser.email?.split('@')[0] : 'Visitante'}</h2>}
+                            {currentScreen === 'GALLERY' && <h2 className="text-lg font-black text-white uppercase tracking-tight">Galeria & Reviews</h2>}
+                            {currentScreen === 'AGENDA' && <h2 className="text-lg font-black text-white uppercase tracking-tight">Minha Agenda</h2>}
+                            {currentScreen === 'PROFILE' && <h2 className="text-lg font-black text-white uppercase tracking-tight">Meu Perfil</h2>}
+                        </div>
+                    )}
+
+                    {/* Notification / Action Area */}
+                    <div className="relative">
+                        {currentScreen === 'HOME' ? (
+                            <button onClick={() => setShowNotifications(!showNotifications)} className="w-10 h-10 rounded-full bg-zinc-900 border border-white/10 flex items-center justify-center text-zinc-400 hover:text-white transition-all">
+                                <Bell size={18} />
+                                {hasUnread && <span className="absolute top-0 right-0 w-3 h-3 bg-red-600 rounded-full border-2 border-[#020202] animate-pulse" />}
+                            </button>
+                        ) : (
+                            <div className="w-10" /> 
+                        )}
+                        
+                        {/* Notifications Dropdown */}
+                        <AnimatePresence>
+                            {showNotifications && (
+                                <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} exit={{opacity:0}} className="absolute right-0 top-12 w-64 bg-[#121212] border border-white/10 rounded-2xl shadow-2xl z-50 p-2">
+                                    <div className="flex justify-between items-center px-2 pb-2 mb-2 border-b border-white/5">
+                                        <span className="text-[10px] font-bold text-zinc-500 uppercase">Notificações</span>
+                                        <X size={12} className="text-zinc-500 cursor-pointer" onClick={() => setShowNotifications(false)}/>
+                                    </div>
+                                    <div className="max-h-48 overflow-y-auto space-y-2">
+                                        {notifications.length === 0 && <p className="text-[9px] text-center text-zinc-600 py-4">Sem notificações</p>}
+                                        {notifications.map(n => (
+                                            <div key={n.id} className="p-2 bg-white/5 rounded-lg border border-white/5">
+                                                <p className="text-[9px] font-bold text-white">{n.title}</p>
+                                                <p className="text-[8px] text-zinc-400">{n.message}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
+                </div>
+
+                {/* --- CONTENT AREA (SWITCH) --- */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar pb-32 relative">
+                    
+                    {/* HOME SCREEN */}
+                    {currentScreen === 'HOME' && (
+                        <div className="space-y-6 md:space-y-8 px-5 md:px-8">
+                            <div className="bg-[#121212] border border-white/5 rounded-2xl h-12 flex items-center px-4 gap-3 text-zinc-500">
+                                <Search size={16} />
+                                <input placeholder="Buscar serviço..." className="bg-transparent w-full h-full outline-none text-[10px] font-bold uppercase text-white placeholder:text-zinc-700" />
+                            </div>
+
+                            {/* Business Card */}
+                            <div className="w-full aspect-[1.8/1] rounded-[2rem] relative group overflow-hidden border border-white/5 shadow-2xl">
+                                <div className="absolute inset-0 bg-[#050505]/80 backdrop-blur-xl z-10 flex flex-col justify-between p-5">
+                                    <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-50 pointer-events-none" />
+                                    <div className="flex justify-between items-start relative z-20">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-12 h-12 rounded-xl bg-zinc-900 border border-white/10 flex items-center justify-center overflow-hidden">
+                                                {businessSettings.profile_image_url ? <img src={businessSettings.profile_image_url} className="w-full h-full object-cover"/> : <span className="text-xl font-black text-white">{businessSettings.business_name.charAt(0)}</span>}
+                                            </div>
+                                            <div>
+                                                <h3 className="text-sm font-black text-white uppercase tracking-wider">{businessSettings.business_name}</h3>
+                                                <p className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest mt-0.5">Estética Automotiva</p>
+                                            </div>
+                                        </div>
+                                        <button onClick={handleOpenWhatsapp} className="w-10 h-10 rounded-full bg-green-900/20 border border-green-500/20 flex items-center justify-center text-green-500 hover:bg-green-500 hover:text-white transition-all"><Phone size={16} /></button>
+                                    </div>
+                                    <div className="relative z-20 space-y-1">
+                                        <div className="flex items-center gap-2 text-zinc-400"><Instagram size={12}/><span className="text-[9px] font-bold uppercase">{businessSettings.configs?.instagram || '@carboncar'}</span></div>
+                                        <div className="flex items-center gap-2 text-zinc-400"><MapPin size={12}/><span className="text-[9px] font-bold uppercase truncate max-w-[200px]">{businessSettings.address || 'Endereço não informado'}</span></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Services */}
+                            <div>
+                                <h3 className="text-sm font-black text-white uppercase mb-4 pl-1">Serviços</h3>
+                                <div className="grid grid-cols-2 gap-3">
+                                    {services.map((s) => (
+                                        <button key={s.id} onClick={() => { setSelectedService(s); setCurrentScreen('BOOKING'); setStep(1); }} className="bg-[#121212] border border-white/5 p-4 rounded-[1.5rem] flex flex-col justify-between h-[130px] hover:border-red-600/30 transition-all group">
+                                            <div className="flex justify-between w-full">
+                                                <div className="w-8 h-8 rounded-lg bg-zinc-900 flex items-center justify-center group-hover:bg-red-600 transition-colors"><Zap size={14} className="text-white"/></div>
+                                                <p className="text-xs font-black text-white">R$ {Number(s.price).toFixed(0)}</p>
+                                            </div>
+                                            <div className="text-left">
+                                                <h4 className="text-[10px] font-black text-white uppercase line-clamp-2">{s.name}</h4>
+                                                <div className="flex items-center gap-1 mt-1 text-zinc-500"><Clock size={10}/><span className="text-[8px] font-bold uppercase">{formatDuration(s.duration_minutes)}</span></div>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* GALLERY SCREEN */}
+                    {currentScreen === 'GALLERY' && (
+                        <div className="px-5 md:px-8">
+                            <div className="flex bg-[#121212] p-1 rounded-xl border border-white/5 mb-6">
+                                <button onClick={() => setGalleryTab('PHOTOS')} className={cn("flex-1 py-2.5 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2", galleryTab === 'PHOTOS' ? "bg-white text-black shadow-lg" : "text-zinc-500 hover:text-white")}>
+                                    <ImageIcon size={12}/> Showroom
+                                </button>
+                                <button onClick={() => setGalleryTab('REVIEWS')} className={cn("flex-1 py-2.5 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2", galleryTab === 'REVIEWS' ? "bg-white text-black shadow-lg" : "text-zinc-500 hover:text-white")}>
+                                    <Star size={12}/> Avaliações
+                                </button>
+                            </div>
+
+                            {galleryTab === 'PHOTOS' ? (
+                                <div className="grid grid-cols-2 gap-3">
+                                    {portfolio.map((item) => (
+                                        <div key={item.id} className="aspect-[4/5] bg-zinc-900 rounded-2xl overflow-hidden relative group">
+                                            <img src={item.imageUrl} className="w-full h-full object-cover transition-transform group-hover:scale-110 duration-700" />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
+                                                <p className="text-[9px] text-white font-bold uppercase line-clamp-2">{item.description}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {portfolio.length === 0 && <p className="col-span-2 text-center text-zinc-500 text-[10px] font-bold uppercase py-20">Galeria Vazia</p>}
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    <button onClick={() => setIsReviewModalOpen(true)} className="w-full py-4 bg-zinc-900 border border-white/10 border-dashed rounded-2xl text-zinc-400 hover:text-white hover:border-red-600/50 hover:bg-red-900/5 transition-all text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
+                                        <MessageSquare size={14} /> Avaliar Experiência
+                                    </button>
+
+                                    <div className="space-y-3">
+                                        {dbReviews.length === 0 ? (
+                                            <div className="text-center py-10 opacity-50">
+                                                <Star size={32} className="text-zinc-700 mx-auto mb-2" />
+                                                <p className="text-[10px] font-bold text-zinc-500 uppercase">Seja o primeiro a avaliar</p>
+                                            </div>
+                                        ) : (
+                                            dbReviews.map(review => (
+                                                <div key={review.id} className="bg-[#121212] border border-white/5 p-4 rounded-2xl">
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-[10px] font-black text-white">
+                                                                {review.customerName.charAt(0)}
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-[10px] font-black text-white uppercase">{review.customerName}</p>
+                                                                <p className="text-[8px] text-zinc-500">{new Date(review.date).toLocaleDateString()}</p>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex gap-0.5">
+                                                            {Array.from({length: 5}).map((_, i) => (
+                                                                <Star key={i} size={10} className={i < review.rating ? "text-yellow-500 fill-yellow-500" : "text-zinc-800 fill-zinc-800"} />
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-[10px] text-zinc-400 leading-relaxed italic">"{review.comment}"</p>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* AGENDA SCREEN */}
+                    {currentScreen === 'AGENDA' && (
+                        <div className="px-5 md:px-8">
+                            <div className="flex bg-[#121212] p-1 rounded-xl border border-white/5 mb-6">
+                                <button onClick={() => setAgendaTab('UPCOMING')} className={cn("flex-1 py-2.5 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all", agendaTab === 'UPCOMING' ? "bg-white text-black shadow-lg" : "text-zinc-500 hover:text-white")}>Em Breve</button>
+                                <button onClick={() => setAgendaTab('HISTORY')} className={cn("flex-1 py-2.5 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all", agendaTab === 'HISTORY' ? "bg-white text-black shadow-lg" : "text-zinc-500 hover:text-white")}>Histórico</button>
+                            </div>
                             
-                            {/* Step 1: Calendar & Time (REDESIGNED) */}
-                            {step === 1 && (
-                                <div className="space-y-8 animate-in slide-in-from-right-4">
-                                    
-                                    {/* CALENDAR STRIP */}
-                                    <div className="relative isolate">
-                                        {/* Cinematic Glow Behind */}
-                                        <div className="absolute inset-0 bg-red-600/5 blur-[40px] rounded-[3rem] pointer-events-none" />
-                                        
-                                        <div className="bg-[#0c0c0c]/80 backdrop-blur-xl p-6 rounded-[2.5rem] border border-white/5 relative overflow-hidden">
-                                            {/* Noise Texture */}
-                                            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] pointer-events-none" />
-                                            
-                                            {/* Header */}
-                                            <div className="flex items-center justify-between mb-6">
-                                                <button onClick={() => changeMonth(-1)} className="w-8 h-8 flex items-center justify-center text-zinc-500 hover:text-white transition-colors">
-                                                    <ChevronLeft size={16} />
-                                                </button>
-                                                <p className="text-[10px] font-black text-zinc-300 uppercase tracking-[0.3em]">
-                                                    {viewDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}
-                                                </p>
-                                                <button onClick={() => changeMonth(1)} className="w-8 h-8 flex items-center justify-center text-zinc-500 hover:text-white transition-colors">
-                                                    <ChevronRightIcon size={16} />
-                                                </button>
+                            <div className="space-y-3">
+                                {!currentUser ? (
+                                    <div className="text-center py-20">
+                                        <Lock size={32} className="text-zinc-700 mx-auto mb-4" />
+                                        <p className="text-zinc-500 text-[10px] font-bold uppercase mb-4">Faça login para ver sua agenda</p>
+                                        <button onClick={onLoginRequest} className="px-6 py-3 bg-white text-black rounded-xl text-[9px] font-black uppercase tracking-widest">Entrar</button>
+                                    </div>
+                                ) : (agendaTab === 'UPCOMING' ? upcomingAppointments : historyAppointments).length === 0 ? (
+                                    <div className="text-center py-20 opacity-40">
+                                        <CalendarX size={32} className="text-zinc-600 mx-auto mb-4" />
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Nenhum agendamento</p>
+                                    </div>
+                                ) : (
+                                    (agendaTab === 'UPCOMING' ? upcomingAppointments : historyAppointments).map((apt: Appointment) => (
+                                        <div key={apt.id} className="bg-[#121212] p-4 rounded-[1.2rem] border border-white/5 flex flex-col gap-3">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <div className={cn("w-1.5 h-1.5 rounded-full", apt.status === 'CONFIRMADO' ? "bg-white shadow-[0_0_5px_white]" : apt.status === 'EM_EXECUCAO' ? "bg-red-600 animate-pulse" : "bg-zinc-700")} />
+                                                        <p className="text-[9px] font-black text-white uppercase tracking-wide">{new Date(apt.date + 'T12:00:00').toLocaleDateString('pt-BR')} às {apt.time}</p>
+                                                    </div>
+                                                    <p className="text-xs font-black text-white uppercase">{apt.serviceType}</p>
+                                                </div>
+                                                <span className={cn("text-[8px] font-bold px-2 py-1 rounded border uppercase tracking-widest", apt.status === 'FINALIZADO' ? "bg-green-500/10 text-green-500 border-green-500/20" : "text-zinc-500 bg-zinc-900 border-white/5")}>{apt.status}</span>
                                             </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    )}
 
-                                            {/* Dates Scroll */}
-                                            <div className="flex justify-between items-center overflow-x-auto pb-4 scrollbar-hide gap-3 snap-x snap-mandatory">
-                                                {calendarDays.map((day) => {
-                                                    const isSelected = selectedDate === day.dateStr;
-                                                    const isBlocked = !day.isOpen;
-
-                                                    return (
-                                                        <motion.button 
-                                                            key={day.dateStr}
-                                                            onClick={() => { if(!isBlocked) setSelectedDate(day.dateStr); }}
-                                                            whileTap={{ scale: 0.95 }}
-                                                            className={cn(
-                                                                "relative flex flex-col items-center justify-center min-w-[64px] h-[84px] rounded-2xl transition-all snap-center",
-                                                                isBlocked ? "opacity-20 cursor-not-allowed grayscale" : "cursor-pointer"
-                                                            )}
-                                                            disabled={isBlocked}
-                                                        >
-                                                            {isSelected && (
-                                                                <motion.div 
-                                                                    layoutId="activeDateBg"
-                                                                    className="absolute inset-0 bg-gradient-to-b from-red-600 to-red-800 rounded-2xl shadow-[0_0_25px_rgba(220,38,38,0.5)]" 
-                                                                    initial={false}
-                                                                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                                                                />
-                                                            )}
-                                                            
-                                                            <span className={cn(
-                                                                "relative z-10 text-[9px] font-bold uppercase mb-1 tracking-wider transition-colors",
-                                                                isSelected ? "text-white/80" : "text-zinc-500"
-                                                            )}>
-                                                                {day.dayName}
-                                                            </span>
-                                                            <span className={cn(
-                                                                "relative z-10 text-2xl font-black transition-colors",
-                                                                isSelected ? "text-white" : "text-zinc-400"
-                                                            )}>
-                                                                {day.dayNumber}
-                                                            </span>
-                                                        </motion.button>
-                                                    )
-                                                })}
-                                            </div>
+                    {/* PROFILE SCREEN */}
+                    {currentScreen === 'PROFILE' && (
+                        <div className="px-5 md:px-8 space-y-6">
+                            {currentUser ? (
+                                <>
+                                    <div className="bg-[#121212] p-6 rounded-[2rem] border border-white/5 flex flex-col items-center text-center relative overflow-hidden">
+                                        <div className="absolute top-0 inset-x-0 h-20 bg-gradient-to-b from-red-600/10 to-transparent pointer-events-none" />
+                                        <div className="w-20 h-20 bg-zinc-900 rounded-full flex items-center justify-center text-zinc-500 border-4 border-[#121212] relative z-10 shadow-xl mb-4">
+                                            <User size={28}/>
+                                        </div>
+                                        <h3 className="text-lg font-black text-white uppercase tracking-tight">{currentUser.email?.split('@')[0]}</h3>
+                                        <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest mb-6">{currentUser.email}</p>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="bg-[#121212] p-4 rounded-[1.5rem] border border-white/5">
+                                            <div className="flex items-center gap-2 mb-2"><Wrench size={12} className="text-white"/><span className="text-[8px] font-black text-zinc-500 uppercase">Serviços</span></div>
+                                            <p className="text-xl font-black text-white pl-1">{servicesCount}</p>
+                                        </div>
+                                        <div className="bg-[#121212] p-4 rounded-[1.5rem] border border-white/5">
+                                            <div className="flex items-center gap-2 mb-2"><Car size={12} className="text-red-500"/><span className="text-[8px] font-black text-zinc-500 uppercase">Veículo</span></div>
+                                            <p className="text-xs font-black text-white pl-1 uppercase leading-tight truncate">{userVehicle}</p>
                                         </div>
                                     </div>
+                                    <button onClick={onExit} className="w-full py-4 bg-red-900/10 border border-red-600/20 rounded-xl text-[9px] font-black uppercase text-red-500 hover:bg-red-600 hover:text-white transition-all flex items-center justify-center gap-2">
+                                        <LogOut size={14} /> Sair da Conta
+                                    </button>
+                                </>
+                            ) : (
+                                <div className="text-center py-20">
+                                    <p className="text-zinc-500 text-[10px] font-bold uppercase mb-4">Você está navegando como visitante</p>
+                                    <button onClick={onLoginRequest} className="px-6 py-3 bg-white text-black rounded-xl text-[9px] font-black uppercase tracking-widest">Fazer Login</button>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
-                                    {/* TIME SLOTS GRID */}
-                                    <div>
-                                        <div className="flex justify-between items-center mb-4">
-                                            <h3 className="text-sm font-black text-white uppercase flex items-center gap-2">
-                                                <Clock size={14} className="text-red-600" /> Disponibilidade
-                                            </h3>
-                                            {!selectedService && (
-                                                <span className="text-[9px] text-zinc-500 font-bold uppercase bg-zinc-900 px-2 py-1 rounded border border-white/5">
-                                                    Horários Padrão (60min)
-                                                </span>
-                                            )}
+                    {/* BOOKING WIZARD */}
+                    {currentScreen === 'BOOKING' && (
+                        <div className="px-5 md:px-8 pb-32">
+                            {/* Step 1: Calendar */}
+                            {step === 1 && (
+                                <div className="space-y-6 animate-in slide-in-from-right-4">
+                                    <div className="bg-[#0c0c0c] border border-white/5 p-4 rounded-[2rem]">
+                                        <div className="flex items-center justify-between mb-4">
+                                            <button onClick={() => changeMonth(-1)}><ChevronLeft size={14} className="text-zinc-500"/></button>
+                                            <span className="text-[10px] font-black text-white uppercase tracking-widest">{viewDate.toLocaleString('pt-BR', {month:'long', year:'numeric'})}</span>
+                                            <button onClick={() => changeMonth(1)}><ChevronLeft size={14} className="text-zinc-500 rotate-180"/></button>
                                         </div>
-                                        
-                                        {availableSlots.length > 0 ? (
-                                            <motion.div 
-                                                className="grid grid-cols-3 gap-3"
-                                                initial="hidden"
-                                                animate="visible"
-                                                variants={{
-                                                    visible: { transition: { staggerChildren: 0.05 } }
-                                                }}
-                                            >
-                                                <AnimatePresence mode='wait'>
-                                                    {availableSlots.map((t) => {
-                                                        const boxCapacity = businessSettings.box_capacity || 1;
-                                                        const currentCount = slotOccupancy[t] || 0;
-                                                        const isFull = currentCount >= boxCapacity;
-                                                        
-                                                        return (
-                                                            <motion.button 
-                                                                key={t}
-                                                                variants={{
-                                                                    hidden: { opacity: 0, y: 20 },
-                                                                    visible: { opacity: 1, y: 0 }
-                                                                }}
-                                                                onClick={() => !isFull && setSelectedTime(t)}
-                                                                disabled={isFull}
-                                                                className={cn(
-                                                                    "relative py-3 rounded-xl border text-xs font-bold transition-all overflow-hidden group flex flex-col items-center justify-center gap-1",
-                                                                    isFull 
-                                                                        ? "bg-red-600 text-white border-red-800 opacity-100 cursor-not-allowed" // VERMELHO TOTAL SOLICITADO
-                                                                        : selectedTime === t 
-                                                                            ? "bg-white text-black border-white shadow-[0_0_30px_rgba(255,255,255,0.2)] scale-[1.02]" 
-                                                                            : "bg-[#121212] text-zinc-400 border-white/5 hover:border-white/20 hover:bg-white/[0.02]"
-                                                                )}
-                                                            >
-                                                                {/* Selected Indicator */}
-                                                                {!isFull && selectedTime === t && (
-                                                                    <motion.div 
-                                                                        layoutId="activeTime"
-                                                                        className="absolute inset-0 bg-white"
-                                                                        transition={{ duration: 0.2 }}
-                                                                    />
-                                                                )}
-                                                                
-                                                                <span className={cn("relative z-10 font-mono tracking-tight")}>{t}</span>
-                                                            </motion.button>
-                                                        );
-                                                    })}
-                                                </AnimatePresence>
-                                            </motion.div>
-                                        ) : (
-                                            <div className="text-center py-12 bg-[#121212] rounded-[2rem] border border-white/5 flex flex-col items-center gap-4">
-                                                <div className="w-12 h-12 rounded-full bg-zinc-900 flex items-center justify-center border border-white/5">
-                                                    <Clock size={20} className="text-zinc-600" />
-                                                </div>
-                                                <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Data sem horários livres</p>
-                                            </div>
-                                        )}
+                                        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                                            {calendarDays.map(d => (
+                                                <button key={d.dateStr} disabled={!d.isOpen} onClick={() => setSelectedDate(d.dateStr)} className={cn("min-w-[50px] h-[64px] rounded-xl flex flex-col items-center justify-center transition-all", selectedDate === d.dateStr ? "bg-red-600 text-white shadow-glow-red" : !d.isOpen ? "opacity-20 grayscale" : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800")}>
+                                                    <span className="text-[8px] font-bold uppercase">{d.dayName}</span>
+                                                    <span className="text-lg font-black">{d.dayNumber}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <h3 className="text-xs font-black text-white uppercase mb-4 pl-1">Horários</h3>
+                                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                                            {availableSlots.length > 0 ? availableSlots.map(t => {
+                                                const full = (slotOccupancy[t] || 0) >= businessSettings.box_capacity;
+                                                return (
+                                                    <button key={t} disabled={full} onClick={() => setSelectedTime(t)} className={cn("py-3 rounded-lg border text-xs font-bold transition-all", full ? "bg-red-900/10 border-red-900/30 text-red-900 cursor-not-allowed" : selectedTime === t ? "bg-white text-black border-white" : "bg-[#121212] border-white/5 text-zinc-400 hover:border-white/20")}>
+                                                        {t}
+                                                    </button>
+                                                )
+                                            }) : <p className="col-span-4 text-center text-zinc-600 text-[10px] py-4 uppercase font-bold">Selecione uma data disponível</p>}
+                                        </div>
                                     </div>
                                 </div>
                             )}
 
                             {/* Step 2: Info */}
                             {step === 2 && (
-                                <div className="space-y-6 animate-in slide-in-from-right-4">
-                                    {!selectedService && services.length > 0 && (
-                                        <div className="space-y-4">
-                                            <h3 className="text-sm font-black text-white uppercase">Selecione o Serviço</h3>
-                                            <div className="space-y-2">
-                                                {services.map((s: ServiceItem) => (
-                                                    <button key={s.id} onClick={() => setSelectedService(s)} className={cn("w-full p-4 rounded-2xl border flex justify-between items-center transition-all", selectedService?.id === s.id ? "bg-red-600/20 border-red-600 text-white" : "bg-[#121212] border-white/5 text-zinc-400")}>
-                                                        <span className="text-xs font-bold uppercase">{s.name}</span>
-                                                        <span className="text-xs font-black">R$ {Number(s.price).toFixed(0)}</span>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <div className="space-y-4">
-                                        <h3 className="text-sm font-black text-white uppercase">Seus Dados</h3>
-                                        <input placeholder="Nome Completo" className="w-full bg-[#121212] border border-white/5 rounded-2xl p-5 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={guestForm.name} onChange={e => setGuestForm({...guestForm, name: e.target.value})} />
-                                        <input placeholder="Telefone" className="w-full bg-[#121212] border border-white/5 rounded-2xl p-5 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={guestForm.phone} onChange={e => setGuestForm({...guestForm, phone: formatPhone(e.target.value)})} />
-                                    </div>
+                                <div className="space-y-4 animate-in slide-in-from-right-4">
+                                    <h3 className="text-xs font-black text-white uppercase pl-1">Seus Dados</h3>
+                                    <input placeholder="Nome Completo" className="w-full bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={guestForm.name} onChange={e => setGuestForm({...guestForm, name: e.target.value})} />
+                                    <input placeholder="Telefone" className="w-full bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={guestForm.phone} onChange={e => setGuestForm({...guestForm, phone: formatPhone(e.target.value)})} />
                                 </div>
                             )}
 
-                             {/* Step 3: Vehicle */}
-                             {step === 3 && (
-                                <div className="space-y-6 animate-in slide-in-from-right-4">
-                                    <div className="space-y-4">
-                                        <h3 className="text-sm font-black text-white uppercase">Veículo</h3>
-                                        <div className="grid grid-cols-2 gap-4">
-                                             <input placeholder="Marca (Ex: Honda)" className="w-full bg-[#121212] border border-white/5 rounded-2xl p-5 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={vehicleForm.brand} onChange={e => setVehicleForm({...vehicleForm, brand: e.target.value})} />
-                                             <input placeholder="Modelo (Ex: Civic)" className="w-full bg-[#121212] border border-white/5 rounded-2xl p-5 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={vehicleForm.model} onChange={e => setVehicleForm({...vehicleForm, model: e.target.value})} />
-                                        </div>
-                                        <input placeholder="Placa (Opcional)" className="w-full bg-[#121212] border border-white/5 rounded-2xl p-5 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={vehicleForm.plate} onChange={e => setVehicleForm({...vehicleForm, plate: formatPlate(e.target.value)})} />
+                            {/* Step 3: Vehicle */}
+                            {step === 3 && (
+                                <div className="space-y-4 animate-in slide-in-from-right-4">
+                                    <h3 className="text-xs font-black text-white uppercase pl-1">Veículo</h3>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <input placeholder="Marca" className="bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={vehicleForm.brand} onChange={e => setVehicleForm({...vehicleForm, brand: e.target.value})} />
+                                        <input placeholder="Modelo" className="bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={vehicleForm.model} onChange={e => setVehicleForm({...vehicleForm, model: e.target.value})} />
                                     </div>
-                                    
-                                    <div className="bg-white/5 rounded-2xl p-6 border border-white/5 mt-8">
-                                        <div className="flex justify-between items-center mb-2">
-                                            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Total Estimado</span>
-                                            <span className="text-xl font-black text-white">R$ {selectedService?.price.toFixed(2)}</span>
-                                        </div>
-                                        <p className="text-[10px] text-zinc-600 uppercase">
-                                            {selectedService?.name} • {new Date(selectedDate + 'T12:00:00').toLocaleDateString('pt-BR')} às {selectedTime}
-                                        </p>
-                                    </div>
+                                    <input placeholder="Placa" className="w-full bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={vehicleForm.plate} onChange={e => setVehicleForm({...vehicleForm, plate: formatPlate(e.target.value)})} />
                                 </div>
                             )}
 
-                        </div>
-                    )}
-
-                    {/* Bottom Action Bar */}
-                    {step < 4 && (
-                        <div className="p-8 border-t border-white/5 bg-[#020202]">
-                            <button 
-                                onClick={() => {
-                                    if (step === 1) { if(selectedDate && selectedTime) setStep(2); }
-                                    else if (step === 2) { if(guestForm.name && guestForm.phone) setStep(3); }
-                                    else if (step === 3) { 
-                                        if (vehicleForm.brand && vehicleForm.model) handleFinalize(); 
-                                        else alert("Por favor, informe pelo menos a Marca e o Modelo do veículo.");
-                                    }
-                                }}
-                                disabled={loading || (step === 1 && (!selectedDate || !selectedTime))}
-                                className={cn(
-                                    "w-full py-5 rounded-2xl font-black uppercase tracking-widest text-xs shadow-glow-red transition-all flex items-center justify-center gap-2",
-                                    (step === 1 && (!selectedDate || !selectedTime)) 
-                                        ? "bg-zinc-900 text-zinc-600 cursor-not-allowed" 
-                                        : "bg-red-600 hover:bg-red-500 text-white"
-                                )}
-                            >
-                                {loading ? <Loader2 className="animate-spin" size={16}/> : (step === 3 ? "Finalizar Agendamento" : "Continuar")}
-                            </button>
-                        </div>
-                    )}
-
-                </div>
-            </div>
-        );
-    }
-
-    // --- SCREEN: AGENDA ---
-    if (currentScreen === 'AGENDA') {
-        return (
-            <div className="min-h-screen bg-[#020202] flex items-center justify-center font-sans p-4">
-                <div className="w-full max-w-[450px] h-screen md:h-[850px] md:rounded-[3rem] bg-[#020202] border border-white/5 overflow-hidden relative shadow-2xl flex flex-col">
-                    <div className="pt-12 px-8 pb-4 flex items-center justify-between border-b border-white/5 bg-[#020202]">
-                         <button onClick={() => setCurrentScreen('HOME')} className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center text-white hover:bg-white/5">
-                             <ChevronLeft size={20} />
-                         </button>
-                         <h2 className="text-sm font-black text-white uppercase tracking-widest">Minha Agenda</h2>
-                         <div className="w-10" />
-                    </div>
-
-                    <div className="p-6">
-                        <div className="flex bg-[#121212] p-1 rounded-2xl border border-white/5">
-                            <button onClick={() => setAgendaTab('UPCOMING')} className={cn("flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all", agendaTab === 'UPCOMING' ? "bg-white text-black shadow-lg" : "text-zinc-500 hover:text-white")}>Em Breve</button>
-                            <button onClick={() => setAgendaTab('HISTORY')} className={cn("flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all", agendaTab === 'HISTORY' ? "bg-white text-black shadow-lg" : "text-zinc-500 hover:text-white")}>Histórico</button>
-                        </div>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto custom-scrollbar px-6 pb-32 space-y-3">
-                        {!currentUser ? (
-                            <div className="text-center py-20 flex flex-col items-center">
-                                <Lock size={32} className="text-zinc-700 mb-4" />
-                                <p className="text-zinc-500 text-xs font-bold uppercase mb-4">Faça login para ver sua agenda</p>
-                                <button onClick={onLoginRequest} className="px-8 py-3 bg-white text-black rounded-xl text-xs font-black uppercase tracking-widest">Fazer Login</button>
-                            </div>
-                        ) : (agendaTab === 'UPCOMING' ? upcomingAppointments : historyAppointments).length === 0 ? (
-                            <div className="text-center py-20 flex flex-col items-center opacity-40">
-                                <CalendarX size={32} className="text-zinc-600 mb-4" />
-                                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Nenhum agendamento encontrado</p>
-                            </div>
-                        ) : (
-                            (agendaTab === 'UPCOMING' ? upcomingAppointments : historyAppointments).map((apt: Appointment) => (
-                                <div key={apt.id} className="bg-[#121212] p-5 rounded-[1.5rem] border border-white/5 flex flex-col gap-3">
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <div className={cn(
-                                                    "w-2 h-2 rounded-full",
-                                                    apt.status === 'CONFIRMADO' ? "bg-white shadow-[0_0_5px_white]" : 
-                                                    apt.status === 'EM_EXECUCAO' ? "bg-red-600 animate-pulse shadow-[0_0_10px_red]" :
-                                                    apt.status === 'FINALIZADO' ? "bg-green-500 shadow-[0_0_5px_lime]" :
-                                                    "bg-zinc-700"
-                                                )} />
-                                                <p className="text-[10px] font-black text-white uppercase tracking-wide">{new Date(apt.date + 'T12:00:00').toLocaleDateString('pt-BR')} às {apt.time}</p>
-                                            </div>
-                                            <p className="text-sm font-black text-white uppercase">{apt.serviceType}</p>
-                                        </div>
-                                        <span className={cn(
-                                            "text-[9px] font-bold px-2 py-1 rounded border uppercase tracking-widest",
-                                            apt.status === 'FINALIZADO' ? "bg-green-500/10 text-green-500 border-green-500/20" :
-                                            apt.status === 'CANCELADO' ? "bg-red-500/10 text-red-500 border-red-500/20" :
-                                            "text-zinc-500 bg-zinc-900 border-white/5"
-                                        )}>
-                                            {apt.status}
-                                        </span>
+                            {/* Step 4: Success */}
+                            {step === 4 && (
+                                <div className="flex flex-col items-center justify-center py-10 animate-in zoom-in-95 text-center">
+                                    <div className="w-20 h-20 bg-green-500/10 border border-green-500/20 rounded-full flex items-center justify-center mb-6">
+                                        <Check size={32} className="text-green-500" />
                                     </div>
-                                    <div className="h-px bg-white/5 w-full" />
-                                    <div className="flex justify-between items-center">
-                                        <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">{businessSettings.business_name}</p>
-                                        <p className="text-xs font-black text-white">R$ {Number(apt.price).toFixed(2)}</p>
-                                    </div>
+                                    <h2 className="text-xl font-black text-white uppercase mb-2">Agendado!</h2>
+                                    <p className="text-zinc-500 text-xs font-medium max-w-xs mx-auto leading-relaxed mb-8">
+                                        Seu serviço foi confirmado para {new Date(selectedDate+'T12:00:00').toLocaleDateString()} às {selectedTime}.
+                                    </p>
+                                    <button onClick={() => { setCurrentScreen('HOME'); setStep(1); }} className="w-full py-4 bg-white text-black rounded-xl font-black uppercase tracking-widest text-[10px]">Voltar para o Início</button>
                                 </div>
-                            ))
-                        )}
-                    </div>
-                    <BottomNav />
-                </div>
-            </div>
-        )
-    }
+                            )}
 
-    // --- SCREEN: PROFILE (Refactored) ---
-    if (currentScreen === 'PROFILE') {
-        return (
-            <div className="min-h-screen bg-[#020202] flex items-center justify-center font-sans p-4">
-                <div className="w-full max-w-[450px] h-screen md:h-[850px] md:rounded-[3rem] bg-[#020202] border border-white/5 overflow-hidden relative shadow-2xl flex flex-col">
-                    <div className="pt-12 px-8 pb-4 flex items-center justify-between border-b border-white/5 bg-[#020202]">
-                         <button onClick={() => setCurrentScreen('HOME')} className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center text-white hover:bg-white/5">
-                             <ChevronLeft size={20} />
-                         </button>
-                         <h2 className="text-sm font-black text-white uppercase tracking-widest">Meu Perfil</h2>
-                         <div className="w-10" />
-                    </div>
+                            {/* Action Bar */}
+                            {step < 4 && (
+                                <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black to-transparent z-50 flex justify-center">
+                                    <button 
+                                        onClick={() => {
+                                            if (step === 1) { if(selectedDate && selectedTime) setStep(2); }
+                                            else if (step === 2) { if(guestForm.name && guestForm.phone) setStep(3); }
+                                            else if (step === 3) { if(vehicleForm.brand && vehicleForm.model) handleFinalize(); }
+                                        }}
+                                        disabled={loading || (step === 1 && (!selectedDate || !selectedTime))}
+                                        className={cn("w-full max-w-sm py-4 rounded-xl font-black uppercase tracking-widest text-[10px] shadow-glow-red transition-all flex items-center justify-center gap-2", (step === 1 && (!selectedDate || !selectedTime)) ? "bg-zinc-900 text-zinc-600 cursor-not-allowed" : "bg-red-600 text-white hover:bg-red-500")}
+                                    >
+                                        {loading ? <Loader2 className="animate-spin" size={14}/> : (step === 3 ? "Finalizar" : "Continuar")}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
-                    <div className="flex-1 overflow-y-auto custom-scrollbar p-8 pb-32">
-                         {currentUser ? (
-                             <div className="space-y-8">
-                                 {/* User Card */}
-                                 <div className="bg-[#121212] p-8 rounded-[2.5rem] border border-white/5 flex flex-col items-center text-center relative overflow-hidden">
-                                     <div className="absolute top-0 inset-x-0 h-24 bg-gradient-to-b from-red-600/10 to-transparent pointer-events-none" />
-                                     <div className="w-24 h-24 bg-zinc-900 rounded-full flex items-center justify-center text-zinc-500 border-4 border-[#121212] relative z-10 shadow-xl mb-4">
-                                        <User size={32}/>
-                                     </div>
-                                     <h3 className="text-xl font-black text-white uppercase tracking-tight">{currentUser.email?.split('@')[0]}</h3>
-                                     <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-6">{currentUser.email}</p>
-                                     <div className="flex gap-2">
-                                         <div className="px-3 py-1 bg-white/5 rounded-lg border border-white/5 text-[9px] font-black text-zinc-300 uppercase">Cliente VIP</div>
-                                         <div className="px-3 py-1 bg-white/5 rounded-lg border border-white/5 text-[9px] font-black text-zinc-300 uppercase">Membro desde {new Date().getFullYear()}</div>
-                                     </div>
-                                 </div>
-
-                                 {/* Stats Grid */}
-                                 <div className="grid grid-cols-2 gap-4">
-                                     <div className="bg-[#121212] p-5 rounded-[2rem] border border-white/5">
-                                         <div className="flex items-center gap-2 mb-2">
-                                             <div className="p-2 bg-zinc-900 rounded-full"><Wrench size={14} className="text-white"/></div>
-                                             <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Serviços Realizados</span>
-                                         </div>
-                                         <p className="text-2xl font-black text-white pl-1">{servicesCount}</p>
-                                     </div>
-                                     <div className="bg-[#121212] p-5 rounded-[2rem] border border-white/5">
-                                         <div className="flex items-center gap-2 mb-2">
-                                             <div className="p-2 bg-zinc-900 rounded-full"><Car size={14} className="text-red-500"/></div>
-                                             <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Veículo</span>
-                                         </div>
-                                         <p className="text-sm font-black text-white pl-1 uppercase leading-tight">{userVehicle}</p>
-                                     </div>
-                                 </div>
-
-                                 {/* Actions */}
-                                 <div className="space-y-3 pt-4">
-                                     <button onClick={() => setIsChangePasswordOpen(true)} className="w-full py-4 border border-white/5 bg-[#121212] rounded-2xl text-[10px] font-black uppercase text-zinc-400 hover:text-white flex items-center justify-center gap-3">
-                                         <Key size={14} /> Trocar Senha
-                                     </button>
-                                     <button onClick={onExit} className="w-full py-4 bg-red-900/10 border border-red-600/20 rounded-2xl text-[10px] font-black uppercase text-red-500 hover:bg-red-600 hover:text-white transition-all flex items-center justify-center gap-3">
-                                         <LogOut size={14} /> Sair da Conta
-                                     </button>
-                                 </div>
-                             </div>
-                         ) : (
-                             <div className="text-center py-20">
-                                 <p className="text-zinc-500 text-xs font-bold uppercase mb-4">Você está navegando como visitante</p>
-                                 <button onClick={onLoginRequest} className="px-8 py-3 bg-white text-black rounded-xl text-xs font-black uppercase tracking-widest">Fazer Login</button>
-                             </div>
-                         )}
-                    </div>
-                    <BottomNav />
-
-                    {/* CUSTOM PASSWORD MODAL */}
-                    {isChangePasswordOpen && (
-                        <div className="absolute inset-0 z-50 flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300 rounded-[3rem]">
-                            <div className="bg-zinc-900 border border-zinc-800 w-full max-w-sm p-8 rounded-[2rem] shadow-2xl animate-in zoom-in-95 relative">
-                                <button 
-                                    onClick={() => setIsChangePasswordOpen(false)} 
-                                    className="absolute top-6 right-6 text-zinc-500 hover:text-white transition-colors"
-                                >
-                                    <X size={20} />
-                                </button>
+                    {/* REVIEW MODAL (OVERLAY) */}
+                    {isReviewModalOpen && (
+                        <div className="absolute inset-0 z-50 bg-[#020202] p-6 animate-in slide-in-from-bottom-10">
+                            <div className="h-full flex flex-col">
+                                <div className="flex justify-between items-center mb-8">
+                                    <h3 className="text-lg font-black text-white uppercase">Avaliar Experiência</h3>
+                                    <button onClick={() => setIsReviewModalOpen(false)} className="w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-500 hover:text-white"><X size={18}/></button>
+                                </div>
                                 
-                                <div className="text-center mb-8">
-                                    <div className="w-16 h-16 bg-black border border-white/10 rounded-2xl flex items-center justify-center mx-auto mb-4 text-red-600 shadow-[0_0_30px_rgba(220,38,38,0.1)]">
-                                        <Key size={28} />
-                                    </div>
-                                    <h3 className="text-xl font-black text-white uppercase tracking-tight">Alterar Senha</h3>
-                                    <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-2">Segurança da Conta</p>
-                                </div>
-
-                                <form onSubmit={handleSaveNewPassword} className="space-y-4">
-                                    <div>
-                                        <input 
-                                            type="password" 
-                                            placeholder="NOVA SENHA" 
-                                            className="w-full bg-black/50 border border-white/10 focus:border-red-600 rounded-xl px-4 py-4 text-xs font-bold text-white placeholder:text-zinc-600 outline-none transition-all"
-                                            value={passwordForm.newPassword}
-                                            onChange={(e) => setPasswordForm({...passwordForm, newPassword: e.target.value})}
-                                        />
-                                    </div>
-                                    <div>
-                                        <input 
-                                            type="password" 
-                                            placeholder="CONFIRME A SENHA" 
-                                            className="w-full bg-black/50 border border-white/10 focus:border-red-600 rounded-xl px-4 py-4 text-xs font-bold text-white placeholder:text-zinc-600 outline-none transition-all"
-                                            value={passwordForm.confirmPassword}
-                                            onChange={(e) => setPasswordForm({...passwordForm, confirmPassword: e.target.value})}
-                                        />
+                                <form onSubmit={handleSubmitReview} className="flex-1 flex flex-col gap-6">
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest pl-2">Sua Nota</label>
+                                        <div className="flex gap-2 justify-center py-6 bg-[#121212] border border-white/5 rounded-2xl">
+                                            {Array.from({length: 5}).map((_, i) => (
+                                                <button key={i} type="button" onClick={() => setReviewForm({...reviewForm, rating: i+1})} className="p-1 transition-transform active:scale-90 hover:scale-110">
+                                                    <Star size={32} className={i < reviewForm.rating ? "text-yellow-500 fill-yellow-500" : "text-zinc-800 fill-zinc-800"} strokeWidth={1} />
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
 
-                                    {passwordFeedback && (
-                                        <div className={cn(
-                                            "p-3 rounded-xl text-[10px] font-bold uppercase text-center border",
-                                            passwordStatus === 'ERROR' ? "bg-red-900/20 text-red-500 border-red-500/20" : "bg-green-900/20 text-green-500 border-green-500/20"
-                                        )}>
-                                            {passwordFeedback}
+                                    {!currentUser && (
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest pl-2">Seu Nome</label>
+                                            <input required className="w-full bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-yellow-500/50" value={reviewForm.name} onChange={e => setReviewForm({...reviewForm, name: e.target.value})} placeholder="Como quer ser identificado?" />
                                         </div>
                                     )}
 
-                                    <div className="pt-2 flex gap-3">
-                                        <button 
-                                            type="button" 
-                                            onClick={() => setIsChangePasswordOpen(false)}
-                                            className="flex-1 py-4 rounded-xl text-[10px] font-black uppercase text-zinc-500 hover:text-white hover:bg-white/5 transition-all"
-                                        >
-                                            Cancelar
-                                        </button>
-                                        <button 
-                                            type="submit" 
-                                            disabled={passwordStatus === 'SAVING'}
-                                            className="flex-1 py-4 bg-red-600 hover:bg-red-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-glow-red transition-all flex items-center justify-center gap-2"
-                                        >
-                                            {passwordStatus === 'SAVING' ? <Loader2 className="animate-spin" size={14} /> : 'Salvar'}
-                                        </button>
+                                    <div className="space-y-2 flex-1">
+                                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest pl-2">Comentário</label>
+                                        <textarea required className="w-full h-40 bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-yellow-500/50 resize-none" value={reviewForm.comment} onChange={e => setReviewForm({...reviewForm, comment: e.target.value})} placeholder="Conte como foi o serviço..." />
                                     </div>
+
+                                    <button type="submit" disabled={submittingReview} className="w-full py-4 bg-white text-black rounded-xl font-black uppercase tracking-widest text-[10px] shadow-lg flex items-center justify-center gap-2 hover:bg-zinc-200 transition-all">
+                                        {submittingReview ? <Loader2 className="animate-spin" size={14}/> : <Send size={14}/>} Enviar Avaliação
+                                    </button>
                                 </form>
                             </div>
                         </div>
                     )}
+
                 </div>
+
+                {currentScreen !== 'BOOKING' && !isReviewModalOpen && <BottomNav />}
             </div>
-        );
-    }
-
-    // --- SCREEN: GALLERY (Simplified Overlay) ---
-    return (
-        <div className="min-h-screen bg-[#020202] flex items-center justify-center font-sans p-4">
-             <div className="w-full max-w-[450px] h-screen md:h-[850px] md:rounded-[3rem] bg-[#020202] border border-white/5 overflow-hidden relative shadow-2xl flex flex-col">
-                 <div className="pt-12 px-8 pb-4 flex items-center justify-between border-b border-white/5">
-                     <button onClick={() => setCurrentScreen('HOME')} className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center text-white hover:bg-white/5">
-                         <ChevronLeft size={20} />
-                     </button>
-                     <h2 className="text-sm font-black text-white uppercase tracking-widest">Galeria & Showroom</h2>
-                     <div className="w-10" />
-                 </div>
-
-                 <div className="flex-1 overflow-y-auto custom-scrollbar p-8 pb-32">
-                     <div className="grid grid-cols-2 gap-3">
-                         {portfolio.map((item: PortfolioItem) => (
-                             <div key={item.id} className="aspect-[4/5] bg-zinc-900 rounded-2xl overflow-hidden relative group">
-                                 <img src={item.imageUrl} className="w-full h-full object-cover" />
-                                 <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
-                                     <p className="text-[9px] text-white font-bold uppercase">{item.description}</p>
-                                 </div>
-                             </div>
-                         ))}
-                         {portfolio.length === 0 && <p className="col-span-2 text-center text-zinc-500 text-xs py-20">Galeria vazia</p>}
-                     </div>
-                 </div>
-                 <BottomNav />
-             </div>
         </div>
     );
 };
