@@ -326,7 +326,7 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
     // --- RENDER HELPERS ---
 
     const BottomNav = () => (
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-40 w-full max-w-[340px] px-4">
+        <div className="fixed md:absolute bottom-6 md:bottom-8 left-1/2 -translate-x-1/2 z-50 w-full max-w-[340px] px-6 md:px-4">
             <div className="bg-[#121212]/90 backdrop-blur-xl border border-white/5 rounded-full h-16 flex items-center justify-evenly shadow-2xl">
                 {[
                     { id: 'HOME', icon: LayoutGrid, label: 'Home' },

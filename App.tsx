@@ -37,41 +37,6 @@ const safePushState = (url: string) => {
     try { window.history.pushState({}, '', url); } catch (e) { console.warn('History push skipped:', e); }
 };
 
-// MOCK DATA FOR DEMO FALLBACK
-const MOCK_DEMO_DATA = {
-    settings: {
-        id: 'mock-demo',
-        user_id: 'mock-user',
-        business_name: 'CarbonCar Demo',
-        slug: 'demo',
-        business_phone: '11999999999',
-        address: 'Avenida Paulista, 1000 - SP',
-        box_capacity: 4,
-        patio_capacity: 10,
-        slot_interval_minutes: 60,
-        online_booking_enabled: true,
-        loyalty_program_enabled: true,
-        plan_type: PlanType.ELITE,
-        subscription_status: 'ACTIVE',
-        created_at: new Date().toISOString(),
-        configs: {
-            operating_days: [0,1,2,3,4,5,6].map(d => ({
-                dayOfWeek: d, isOpen: true, openTime: '08:00', closeTime: '18:00'
-            }))
-        }
-    } as BusinessSettings,
-    services: [
-        { id: 'm1', name: 'Lavagem Premium', price: 80, duration_minutes: 60, description: 'Limpeza técnica de carroceria, caixas de roda e aspiração interna.', is_active: true },
-        { id: 'm2', name: 'Polimento Técnico', price: 450, duration_minutes: 240, description: 'Correção de verniz, remoção de riscos e proteção.', is_active: true },
-        { id: 'm3', name: 'Higienização Interna', price: 300, duration_minutes: 180, description: 'Limpeza profunda de estofados, teto e carpetes.', is_active: true },
-        { id: 'm4', name: 'Vitrificação', price: 1200, duration_minutes: 360, description: 'Proteção cerâmica de alta durabilidade (até 3 anos).', is_active: true }
-    ] as ServiceItem[],
-    portfolio: [
-        { id: 'p1', imageUrl: 'https://images.unsplash.com/photo-1601362840469-51e4d8d58785?q=80&w=2070', description: 'Polimento em Porsche 911', date: new Date().toISOString() },
-        { id: 'p2', imageUrl: 'https://images.unsplash.com/photo-1520340356584-7c903ccf70dc?q=80&w=2070', description: 'Detalhe Interior BMW', date: new Date().toISOString() }
-    ] as PortfolioItem[]
-};
-
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [loadingSession, setLoadingSession] = useState(true);
@@ -101,11 +66,11 @@ const App: React.FC = () => {
 
   // FIX: Typing businessSettings as any
   const [businessSettings, setBusinessSettings] = useState<any>({
-    business_name: 'CarbonCar OS', 
-    slug: initialSlug || 'demo', 
-    box_capacity: 3, 
-    patio_capacity: 10, 
-    slot_interval_minutes: 30, 
+    business_name: '', 
+    slug: '', 
+    box_capacity: 1, 
+    patio_capacity: 1, 
+    slot_interval_minutes: 60, 
     operating_days: [], 
     blocked_dates: [],
     online_booking_enabled: true, 
@@ -135,37 +100,18 @@ const App: React.FC = () => {
     setLoadingSession(true);
     setNotFound(false);
     
-    const fetchBiz = async (targetSlug: string) => {
-        const { data } = await supabase.from('business_settings').select('*').eq('slug', targetSlug).maybeSingle();
-        return data;
-    };
-
     try {
-        let biz = await fetchBiz(slug);
-        
-        // Fallback 1: Tentar 'demo' se o slug específico falhar
-        if (!biz && slug !== 'demo') {
-            console.warn(`Hangar '${slug}' não encontrado. Tentando 'demo'.`);
-            biz = await fetchBiz('demo');
-        }
+        const { data: biz, error } = await supabase
+            .from('business_settings')
+            .select('*')
+            .eq('slug', slug)
+            .maybeSingle();
 
-        // Fallback 2 (Fail-Safe DB): Se nem o demo existir, pega o primeiro disponível no banco
-        if (!biz) {
-             const { data: anyBiz } = await supabase.from('business_settings').select('*').limit(1).maybeSingle();
-             if (anyBiz) {
-                 console.log("Demo não encontrado. Carregando primeiro hangar disponível:", anyBiz.slug);
-                 biz = anyBiz;
-                 const newUrl = `${window.location.pathname}?studio=${anyBiz.slug}`;
-                 safeReplaceState(newUrl);
-             }
-        }
-
-        // Fallback 3 (MOCK TOTAL): Se o banco estiver vazio ou RLS bloqueou tudo, usa dados hardcoded
-        // Change: Relaxed condition to trigger mock if !biz at all
-        if (!biz) {
-            console.warn("Nenhum hangar acessível (DB Vazio ou RLS). Ativando MOCK UNIVERSAL.");
-            biz = MOCK_DEMO_DATA.settings;
-            // Não forçamos a mudança da URL para manter a UX do usuário, apenas exibimos o mock
+        if (error) {
+            console.error("Erro ao buscar hangar:", error);
+            setNotFound(true);
+            setLoadingSession(false);
+            return;
         }
 
         if (biz) {
@@ -177,32 +123,22 @@ const App: React.FC = () => {
                 blocked_dates: biz.configs?.blocked_dates || []
             });
             
-            if (biz.id === 'mock-demo') {
-                // Carrega dados mockados se estiver no modo mock
-                setServices(MOCK_DEMO_DATA.services);
-                setPortfolio(MOCK_DEMO_DATA.portfolio);
-            } else {
-                // Carrega dados reais do Supabase
-                const [servRes, portRes] = await Promise.all([
-                    supabase.from('services').select('*').eq('business_id', biz.id).eq('is_active', true),
-                    supabase.from('portfolio_items').select('*').eq('business_id', biz.id)
-                ]);
+            // Carrega dados reais do Supabase
+            const [servRes, portRes] = await Promise.all([
+                supabase.from('services').select('*').eq('business_id', biz.id).eq('is_active', true),
+                supabase.from('portfolio_items').select('*').eq('business_id', biz.id)
+            ]);
 
-                if (servRes.data) setServices(servRes.data.map(s => ({ ...s, price: Number(s.price) })));
-                if (portRes.data) setPortfolio(portRes.data.map(p => ({ ...p, imageUrl: p.image_url, date: p.created_at })));
-            }
+            if (servRes.data) setServices(servRes.data.map(s => ({ ...s, price: Number(s.price) })));
+            if (portRes.data) setPortfolio(portRes.data.map(p => ({ ...p, imageUrl: p.image_url, date: p.created_at })));
         } else {
-            // Este bloco agora é praticamente inalcançável devido ao Fallback 3, o que é bom.
-            console.error("Critical Failure: No Business Found.");
+            console.warn(`Hangar '${slug}' não encontrado.`);
             localStorage.removeItem('carbon_last_slug'); 
             setNotFound(true);
         }
     } catch (e) {
         console.error("Erro dados públicos:", e);
-        // Em caso de erro crítico, carrega o mock em vez de tela de erro
-        setBusinessSettings(MOCK_DEMO_DATA.settings);
-        setServices(MOCK_DEMO_DATA.services);
-        setPortfolio(MOCK_DEMO_DATA.portfolio);
+        setNotFound(true);
     } finally {
         setLoadingSession(false);
     }
@@ -315,9 +251,6 @@ const App: React.FC = () => {
                 }
             }
 
-            // Always fallback to 'demo' if still no slug, instead of Welcome
-            if (!targetSlug) targetSlug = 'demo';
-
             if (targetSlug) {
                 // Atualiza URL silenciosamente para manter contexto no refresh
                 if (!window.location.search.includes('studio=')) {
@@ -332,8 +265,7 @@ const App: React.FC = () => {
         }
     } catch (error) {
         console.error("Erro ao carregar dados:", error);
-        // Em caso de erro crítico, tenta modo publico com mock
-        await loadPublicData('demo');
+        setNotFound(true);
         setViewState('PUBLIC_BOOKING');
     } finally {
         setLoadingSession(false);
@@ -378,17 +310,8 @@ const App: React.FC = () => {
 
   // Auth Flow Handler
   const handleAuthFlow = (role: 'CLIENT' | 'ADMIN', mode: 'LOGIN' | 'REGISTER' | 'GUEST') => {
-    if (mode === 'GUEST') {
-        const demoSlug = 'demo'; 
-        // Redireciona para URL limpa com query param se seguro
-        safePushState(`${window.location.pathname}?studio=${demoSlug}`);
-        
-        loadPublicData(demoSlug);
-        setViewState('PUBLIC_BOOKING');
-    } else {
-        setAuthRole(role);
-        setViewState('AUTH');
-    }
+    setAuthRole(role);
+    setViewState('AUTH');
   };
 
   const handleAuthSuccess = async (user: any) => {
@@ -492,14 +415,6 @@ const App: React.FC = () => {
 
   // Public Booking Handler
   const handlePublicBooking = async (apt: Appointment, customerData: any) => {
-      // ** MOCK BYPASS **
-      // Se estiver no modo mock, simula sucesso sem chamar RPC (que falharia)
-      if (businessSettings.id === 'mock-demo') {
-          console.log("Mock Booking Success (Simulated)");
-          await new Promise(r => setTimeout(r, 1500)); // Delay dramático para UX
-          return true;
-      }
-
       // Usa RPC para transação atômica real
       const { data, error } = await supabase.rpc('create_complete_booking', {
           p_business_slug: businessSettings.slug,
@@ -565,13 +480,13 @@ const App: React.FC = () => {
     if (notFound) {
         return (
             <div className="min-h-screen bg-[#020202] flex items-center justify-center p-4 font-sans">
-                <div className="text-center max-w-md">
-                    <div className="w-20 h-20 bg-zinc-900 border border-white/10 rounded-[2rem] flex items-center justify-center mx-auto mb-6">
+                <div className="text-center max-w-md animate-in zoom-in duration-300">
+                    <div className="w-20 h-20 bg-zinc-900 border border-white/10 rounded-[2rem] flex items-center justify-center mx-auto mb-6 shadow-2xl">
                         <Store size={32} className="text-zinc-600" />
                     </div>
                     <h2 className="text-2xl font-black text-white uppercase tracking-tight mb-2">Hangar Não Encontrado</h2>
                     <p className="text-zinc-500 text-sm mb-8 leading-relaxed">
-                        O estabelecimento solicitado não está disponível ou o link está incorreto.
+                        O estabelecimento solicitado não existe ou o link está incorreto. Verifique o endereço e tente novamente.
                     </p>
                     <button 
                         onClick={() => { 
@@ -581,7 +496,7 @@ const App: React.FC = () => {
                             localStorage.removeItem('carbon_last_slug');
                             safePushState(window.location.pathname);
                         }}
-                        className="px-8 py-4 bg-white text-black rounded-xl text-xs font-black uppercase tracking-widest hover:bg-zinc-200 transition-all"
+                        className="px-8 py-4 bg-white text-black rounded-xl text-xs font-black uppercase tracking-widest hover:bg-zinc-200 transition-all shadow-glow"
                     >
                         Voltar ao Início
                     </button>

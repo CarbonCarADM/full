@@ -97,14 +97,6 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onSelectFlow }) =>
                                     <ArrowRight size={16} strokeWidth={3} className="group-hover:translate-x-1 transition-transform" />
                                 </div>
                             </button>
-
-                            <button 
-                                onClick={() => onSelectFlow('CLIENT', 'GUEST')}
-                                className="px-8 py-5 border border-white/10 hover:border-white/30 hover:bg-white/5 text-white rounded-full transition-all flex items-center justify-center gap-3 group flex-1 sm:flex-none backdrop-blur-sm"
-                            >
-                                <ScanLine size={16} className="text-zinc-500 group-hover:text-white transition-colors" />
-                                <span className="text-xs font-bold uppercase tracking-widest">Visitante (Demo)</span>
-                            </button>
                         </div>
                     </div>
                 ) : (
