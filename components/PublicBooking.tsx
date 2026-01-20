@@ -514,7 +514,7 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
 
                             <div className="grid grid-cols-2 gap-4">
                                 {services.length === 0 && <p className="col-span-2 text-zinc-500 text-xs text-center py-10">Nenhum serviço disponível</p>}
-                                {services.map(s => (
+                                {services.map((s: ServiceItem) => (
                                     <button 
                                         key={s.id}
                                         onClick={() => startBooking(s)} 
@@ -725,7 +725,7 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                                         <div className="space-y-4">
                                             <h3 className="text-sm font-black text-white uppercase">Selecione o Serviço</h3>
                                             <div className="space-y-2">
-                                                {services.map(s => (
+                                                {services.map((s: ServiceItem) => (
                                                     <button key={s.id} onClick={() => setSelectedService(s)} className={cn("w-full p-4 rounded-2xl border flex justify-between items-center transition-all", selectedService?.id === s.id ? "bg-red-600/20 border-red-600 text-white" : "bg-[#121212] border-white/5 text-zinc-400")}>
                                                         <span className="text-xs font-bold uppercase">{s.name}</span>
                                                         <span className="text-xs font-black">R$ {Number(s.price).toFixed(0)}</span>
@@ -833,7 +833,7 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                                 <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Nenhum agendamento encontrado</p>
                             </div>
                         ) : (
-                            (agendaTab === 'UPCOMING' ? upcomingAppointments : historyAppointments).map(apt => (
+                            (agendaTab === 'UPCOMING' ? upcomingAppointments : historyAppointments).map((apt: Appointment) => (
                                 <div key={apt.id} className="bg-[#121212] p-5 rounded-[1.5rem] border border-white/5 flex flex-col gap-3">
                                     <div className="flex justify-between items-start">
                                         <div>
@@ -1027,7 +1027,7 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
 
                  <div className="flex-1 overflow-y-auto custom-scrollbar p-8 pb-32">
                      <div className="grid grid-cols-2 gap-3">
-                         {portfolio.map(item => (
+                         {portfolio.map((item: PortfolioItem) => (
                              <div key={item.id} className="aspect-[4/5] bg-zinc-900 rounded-2xl overflow-hidden relative group">
                                  <img src={item.imageUrl} className="w-full h-full object-cover" />
                                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">

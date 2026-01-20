@@ -171,7 +171,7 @@ export const ReportExportModal: React.FC<ReportExportModalProps> = ({ isOpen, on
       didParseCell: function(data) {
         // Colorir valores
         if (data.section === 'body' && data.column.index === 4) {
-           const type = data.row.raw[2];
+           const type = (data.row.raw as any)[2];
            if (type === 'DESPESA') {
                data.cell.styles.textColor = [220, 38, 38]; // Red
            } else {
