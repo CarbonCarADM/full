@@ -170,6 +170,7 @@ const App: React.FC = () => {
             // Busca dados em paralelo com tratamento individual de erros para não travar tudo
             const [custRes, aptsRes, servRes, expRes, portRes] = await Promise.all([
                 supabase.from('customers').select('*').eq('business_id', biz.id),
+                // CRITICAL FIX: Ensure we fetch ALL appointments for the business, regardless of creator (user_id)
                 supabase.from('appointments').select('*').eq('business_id', biz.id),
                 supabase.from('services').select('*').eq('business_id', biz.id).order('name'),
                 supabase.from('expenses').select('*').eq('business_id', biz.id),
@@ -320,70 +321,132 @@ const App: React.FC = () => {
       await loadData(user.id);
   };
 
-  // Appointment Actions
+  // --- BUG FIX 2: PLAN UPDATE ---
+  const handleUpdatePlan = async (newPlan: PlanType) => {
+      setLoadingSession(true);
+      try {
+          // Atualização direta no Supabase
+          const { error } = await supabase
+              .from('business_settings')
+              .update({ plan_type: newPlan })
+              .eq('id', businessSettings.id);
+
+          if (error) throw error;
+
+          // Atualização otimista do estado local
+          setBusinessSettings((prev: any) => ({ ...prev, plan_type: newPlan }));
+          setCurrentPlan(newPlan);
+          showToast(`Plano atualizado para ${newPlan} com sucesso!`);
+      } catch (e: any) {
+          console.error("Erro ao atualizar plano:", e);
+          showToast(e.message || "Erro ao salvar plano.", 'error');
+      } finally {
+          setLoadingSession(false);
+      }
+  };
+
+  // Appointment & Customer Actions
   const handleAddAppointment = async (newApt: Appointment, newCustomer?: Customer) => {
-    // 1. Insert Customer first if needed
-    let customerId = newApt.customerId;
-    let vehicleId = newApt.vehicleId;
+    setLoadingSession(true); 
 
-    if (newCustomer) {
-        // Insert Customer
-        const { data: custData } = await supabase.from('customers').insert({
-            user_id: currentUser.id,
-            business_id: businessSettings.id,
-            name: newCustomer.name,
-            phone: newCustomer.phone,
-            email: newCustomer.email
-        }).select().single();
+    try {
+        // --- BUG FIX 1: CUSTOMER CREATION CRASH ---
+        // Se estamos vindo do CRM (Novo Cliente), não temos ServiceId.
+        // Devemos apenas criar o cliente e veículo, sem agendamento (RPC).
+        if (newCustomer && (!newApt.serviceId || newApt.serviceId === '')) {
+             // 1. Insert Customer Directly
+             const { data: custData, error: custError } = await supabase
+                .from('customers')
+                .insert({
+                    user_id: currentUser.id, // Garante owner
+                    business_id: businessSettings.id,
+                    name: newCustomer.name,
+                    phone: newCustomer.phone,
+                    email: newCustomer.email
+                })
+                .select()
+                .single();
 
-        if (custData) {
-            customerId = custData.id;
-            setCustomers(prev => [...prev, { ...newCustomer, id: customerId, vehicles: [] }]);
+             if (custError) throw custError;
 
-            // Insert Vehicle
-            const vehicle = newCustomer.vehicles[0];
-            const { data: vehData } = await supabase.from('vehicles').insert({
-                customer_id: customerId,
-                brand: vehicle.brand,
-                model: vehicle.model,
-                plate: vehicle.plate,
-                type: vehicle.type
-            }).select().single();
+             // 2. Insert Vehicle Directly
+             if (newCustomer.vehicles && newCustomer.vehicles.length > 0) {
+                 const v = newCustomer.vehicles[0];
+                 const { error: vehError } = await supabase
+                    .from('vehicles')
+                    .insert({
+                        customer_id: custData.id,
+                        brand: v.brand,
+                        model: v.model,
+                        plate: v.plate,
+                        type: 'CARRO'
+                    });
+                 if (vehError) throw vehError;
+             }
 
-            if (vehData) {
-                vehicleId = vehData.id;
-                // Update local customer vehicles
-                setCustomers(prev => prev.map(c => c.id === customerId ? { 
-                    ...c, 
-                    vehicles: [{ ...vehicle, id: vehicleId }] 
-                } : c));
-            }
+             // 3. Reload Data Safely
+             await loadData(currentUser.id);
+             showToast("Cliente cadastrado com sucesso!");
+             return; // Encerra aqui para não executar lógica de agendamento
         }
-    }
 
-    // 2. Insert Appointment
-    const { data: aptData, error } = await supabase.from('appointments').insert({
-        user_id: currentUser.id,
-        business_id: businessSettings.id,
-        customer_id: customerId,
-        vehicle_id: vehicleId,
-        service_id: newApt.serviceId,
-        service_type: newApt.serviceType,
-        date: newApt.date,
-        time: newApt.time,
-        duration_minutes: newApt.durationMinutes,
-        price: newApt.price,
-        status: newApt.status,
-        observation: newApt.observation
-    }).select().single();
+        // --- NORMAL BOOKING FLOW (COM AGENDAMENTO) ---
+        
+        // 1. Sanitize Data (Fix UUID errors by converting empty strings to null)
+        const cleanServiceId = newApt.serviceId && newApt.serviceId.length > 0 ? newApt.serviceId : null;
+        const cleanVehicleId = newApt.vehicleId && newApt.vehicleId.length > 0 ? newApt.vehicleId : null;
+        
+        // 2. Scenario: New Customer WITH Appointment (Use RPC)
+        if (newCustomer) {
+            const vehicle = newCustomer.vehicles[0];
+            if (!businessSettings.slug) throw new Error("Slug da loja não encontrado.");
 
-    if (aptData) {
-        const finalApt = { ...newApt, id: aptData.id, customerId, vehicleId };
-        setAppointments(prev => [...prev, finalApt]);
-        showToast("Agendamento criado com sucesso!");
-    } else {
-        console.error("Erro ao agendar:", error);
-        showToast("Erro ao criar agendamento.", 'error');
+            const { data, error } = await supabase.rpc('create_complete_booking', {
+                p_business_slug: businessSettings.slug,
+                p_customer_name: newCustomer.name,
+                p_customer_phone: newCustomer.phone,
+                p_vehicle_brand: vehicle.brand || '',
+                p_vehicle_model: vehicle.model || '',
+                p_vehicle_plate: vehicle.plate || '',
+                p_service_id: cleanServiceId,
+                p_booking_date: newApt.date,
+                p_booking_time: newApt.time
+            });
+
+            if (error) throw error;
+            if (data && !data.success) throw new Error(data.error || "Erro na criação via RPC");
+
+            await loadData(currentUser.id);
+            showToast("Agendamento criado com sucesso!");
+        } 
+        // 3. Scenario: Existing Customer (Direct Insert)
+        else {
+            if (!newApt.customerId) throw new Error("ID do cliente inválido");
+
+            const { error } = await supabase.from('appointments').insert({
+                user_id: currentUser.id,
+                business_id: businessSettings.id,
+                customer_id: newApt.customerId,
+                vehicle_id: cleanVehicleId, 
+                service_id: cleanServiceId, 
+                service_type: newApt.serviceType,
+                date: newApt.date,
+                time: newApt.time,
+                duration_minutes: newApt.durationMinutes,
+                price: newApt.price,
+                status: newApt.status,
+                observation: newApt.observation
+            });
+
+            if (error) throw error;
+            await loadData(currentUser.id); 
+            showToast("Agendamento criado com sucesso!");
+        }
+    } catch (e: any) {
+        console.error("Erro ao processar:", e);
+        showToast(e.message || "Erro na operação.", 'error');
+    } finally {
+        setLoadingSession(false);
     }
   };
 
@@ -603,6 +666,7 @@ const App: React.FC = () => {
             {activeTab === 'crm' && (
               <CRM 
                 customers={customers} 
+                // Passa o Appointment vazio para indicar criação APENAS de cliente
                 onAddCustomer={(c) => handleAddAppointment({
                     id: '', customerId: '', vehicleId: '', serviceId: '', serviceType: '', date: '', time: '', durationMinutes: 0, price: 0, status: AppointmentStatus.NOVO
                 } as any, c)}
@@ -656,7 +720,7 @@ const App: React.FC = () => {
             {activeTab === 'settings' && (
               <Settings 
                 currentPlan={currentPlan}
-                onUpgrade={(plan) => setCurrentPlan(plan)}
+                onUpgrade={handleUpdatePlan} // Passando a nova função de persistência
                 settings={businessSettings}
                 onUpdateSettings={setBusinessSettings}
                 services={services}
