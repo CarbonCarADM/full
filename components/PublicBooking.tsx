@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Check, ChevronLeft, Star, MapPin, Search, Zap, X, User, ArrowRight, Clock, Loader2, CalendarX, History, LayoutGrid, Bell, Phone, Filter, Instagram, Calendar as CalendarIcon, Wrench, Car, LogOut, Key, MessageSquare, Send, Image as ImageIcon, ThumbsUp } from 'lucide-react';
+import { Check, ChevronLeft, Star, MapPin, Search, Zap, X, User, ArrowRight, Clock, Loader2, CalendarX, History, LayoutGrid, Bell, Phone, Filter, Instagram, Calendar as CalendarIcon, Wrench, Car, LogOut, Key, MessageSquare, Send, Image as ImageIcon, ThumbsUp, Lock } from 'lucide-react';
 import { BusinessSettings, ServiceItem, Appointment, PortfolioItem, Review } from '../types';
 import { cn, formatPhone, formatPlate } from '../lib/utils';
 import { supabase } from '../lib/supabaseClient';
@@ -103,6 +103,9 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
     const [passwordForm, setPasswordForm] = useState({ newPassword: '', confirmPassword: '' });
     const [passwordStatus, setPasswordStatus] = useState<'IDLE' | 'SAVING' | 'SUCCESS' | 'ERROR'>('IDLE');
     const [passwordFeedback, setPasswordFeedback] = useState('');
+
+    // Fix for TS2786: Lock cannot be used as a JSX component
+    const LockIcon = Lock as any;
 
     // --- EFFECTS ---
 
@@ -297,24 +300,6 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
             alert("Erro ao enviar avaliação.");
         }
         setSubmittingReview(false);
-    };
-
-    const handleSaveNewPassword = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setPasswordStatus('SAVING');
-        if (passwordForm.newPassword.length < 6 || passwordForm.newPassword !== passwordForm.confirmPassword) {
-            setPasswordStatus('ERROR');
-            setPasswordFeedback('Verifique a senha.');
-            return;
-        }
-        try {
-            const { error } = await supabase.auth.updateUser({ password: passwordForm.newPassword });
-            if (error) throw error;
-            setPasswordStatus('SUCCESS');
-            setTimeout(() => { setIsChangePasswordOpen(false); setPasswordStatus('IDLE'); }, 1500);
-        } catch (error: any) {
-            setPasswordStatus('ERROR');
-        }
     };
 
     const changeMonth = (delta: number) => {
@@ -570,7 +555,7 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                             <div className="space-y-3">
                                 {!currentUser ? (
                                     <div className="text-center py-20">
-                                        <Lock size={32} className="text-zinc-700 mx-auto mb-4" />
+                                        <LockIcon size={32} className="text-zinc-700 mx-auto mb-4" />
                                         <p className="text-zinc-500 text-[10px] font-bold uppercase mb-4">Faça login para ver sua agenda</p>
                                         <button onClick={onLoginRequest} className="px-6 py-3 bg-white text-black rounded-xl text-[9px] font-black uppercase tracking-widest">Entrar</button>
                                     </div>
