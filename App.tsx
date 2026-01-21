@@ -1,799 +1,405 @@
-
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
+import { supabase } from './lib/supabaseClient';
+import { 
+  Customer, Appointment, BusinessSettings, ServiceItem, 
+  Expense, PlanType, PortfolioItem, Review, AppointmentStatus 
+} from './types';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
 import { Schedule } from './components/Schedule';
 import { CRM } from './components/CRM';
 import { FinancialModule } from './components/FinancialModule';
-import { WelcomeScreen } from './components/WelcomeScreen';
 import { Settings } from './components/Settings';
-import { PublicBooking } from './components/PublicBooking';
-import { AuthScreen } from './components/AuthScreen';
 import { MarketingModule } from './components/MarketingModule';
+import { WelcomeScreen } from './components/WelcomeScreen';
+import { AuthScreen } from './components/AuthScreen';
+import { PublicBooking } from './components/PublicBooking';
 import { SubscriptionGuard } from './components/SubscriptionGuard';
-import { PlanType, Customer, Appointment, AppointmentStatus, Expense, ServiceItem, BusinessSettings, PortfolioItem } from './types';
-import { Loader2, CheckCircle2, AlertCircle, Menu, LogOut, Store } from 'lucide-react';
-import { cn } from './lib/utils';
-import { supabase } from './lib/supabaseClient';
-import { generateConfirmationMessage, openWhatsAppChat } from './services/whatsappService';
+import { Loader2, Menu } from 'lucide-react';
+import { useEntitySaver } from './hooks/useEntitySaver';
 
-// Helpers para manipulação segura do histórico (evita crash em blob urls)
-const isRestrictedEnv = () => {
-    try {
-        if (typeof window === 'undefined') return true;
-        // Verifica protocolo blob ou se a href começa com blob (comum em previews)
-        return window.location.protocol === 'blob:' || window.location.protocol === 'file:' || window.location.href.startsWith('blob:');
-    } catch {
-        return true;
-    }
-};
-
-const safeReplaceState = (url: string) => {
-    if (isRestrictedEnv()) return;
-    try { window.history.replaceState({}, '', url); } catch (e) { console.warn('History replace skipped:', e); }
-};
-
-const safePushState = (url: string) => {
-    if (isRestrictedEnv()) return;
-    try { window.history.pushState({}, '', url); } catch (e) { console.warn('History push skipped:', e); }
-};
-
-const App: React.FC = () => {
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [loadingSession, setLoadingSession] = useState(true);
-  const [longLoading, setLongLoading] = useState(false); // Estado para mostrar botão de emergência
-  const [notFound, setNotFound] = useState(false); // Estado para Hangar não encontrado
-  
-  // Estado para transferir dados do Agendamento Público para o Cadastro
-  const [preFillAuthData, setPreFillAuthData] = useState<{name: string, phone: string} | null>(null);
-
-  const initialSlug = new URLSearchParams(window.location.search).get('studio');
-  const [viewState, setViewState] = useState<'WELCOME' | 'AUTH' | 'DASHBOARD' | 'PUBLIC_BOOKING'>(
-    initialSlug ? 'PUBLIC_BOOKING' : 'WELCOME'
-  );
-  
-  const [authRole, setAuthRole] = useState<'CLIENT' | 'ADMIN'>('CLIENT');
+function App() {
+  const [session, setSession] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [toast, setToast] = useState<{show: boolean, msg: string, type?: 'success' | 'error'} | null>(null);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  
-  // FIX: Typing states as any[] to prevent TS2339 build error
-  const [customers, setCustomers] = useState<any[]>([]);
-  const [appointments, setAppointments] = useState<any[]>([]);
-  const [services, setServices] = useState<any[]>([]);
-  const [expenses, setExpenses] = useState<any[]>([]);
-  const [portfolio, setPortfolio] = useState<any[]>([]);
-  const [currentPlan, setCurrentPlan] = useState<PlanType>(PlanType.START);
-  
-  // Ref para o timeout de segurança
-  const safetyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // FIX: Typing businessSettings as any
-  const [businessSettings, setBusinessSettings] = useState<any>({
-    business_name: '', 
-    slug: '', 
-    box_capacity: 1, 
-    patio_capacity: 1, 
-    slot_interval_minutes: 60, 
-    operating_days: [], 
-    blocked_dates: [],
-    online_booking_enabled: true, 
-    loyalty_program_enabled: false, 
-    plan_type: PlanType.START,
-    created_at: new Date().toISOString()
-  });
+  // Data
+  const [settings, setSettings] = useState<BusinessSettings | null>(null);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [services, setServices] = useState<ServiceItem[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
 
-  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
-    setToast({ show: true, msg, type });
-    setTimeout(() => setToast(null), 3500);
-  };
+  // Public Mode
+  const [publicSlug, setPublicSlug] = useState<string | null>(null);
 
-  const handleLogout = useCallback(async () => {
-    if (safetyTimeoutRef.current) clearTimeout(safetyTimeoutRef.current);
-    if (supabase) await supabase.auth.signOut();
-    setCurrentUser(null);
-    setViewState('WELCOME');
-    setLoadingSession(false);
-    setLongLoading(false);
-    setNotFound(false);
+  // Auth Flow
+  const [showAuth, setShowAuth] = useState(false);
+  const [authRole, setAuthRole] = useState<'ADMIN' | 'CLIENT'>('ADMIN');
+  const [preFillAuth, setPreFillAuth] = useState<{name: string, phone: string} | null>(null);
+
+  const { save } = useEntitySaver();
+
+  useEffect(() => {
+    // Check URL for public studio
+    const params = new URLSearchParams(window.location.search);
+    const studioSlug = params.get('studio');
+    if (studioSlug) {
+      setPublicSlug(studioSlug);
+    }
+
+    // Auth Listener
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (!studioSlug) {
+          // Only stop loading here if not public mode (public mode fetches data first)
+          if(!session) setLoading(false); 
+      }
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  // Optimized loadPublicData to prevent recursion loops
-  const loadPublicData = useCallback(async (slug: string) => {
-    if (!supabase) return;
-    setLoadingSession(true);
-    setNotFound(false);
-    
+  const fetchData = async () => {
     try {
-        const { data: biz, error } = await supabase
-            .from('business_settings')
-            .select('*')
-            .eq('slug', slug)
-            .maybeSingle();
+        setLoading(true);
+        let businessId = '';
 
-        if (error) {
-            console.error("Erro ao buscar hangar:", error);
-            setNotFound(true);
-            setLoadingSession(false);
+        if (publicSlug) {
+            const { data: biz } = await supabase.from('business_settings').select('*').eq('slug', publicSlug).single();
+            if (biz) {
+                setSettings(biz);
+                businessId = biz.id;
+            } else {
+                alert("Hangar não encontrado.");
+                setPublicSlug(null);
+                setLoading(false);
+                return;
+            }
+        } else if (session?.user) {
+            // Admin Mode
+            const { data: biz } = await supabase.from('business_settings').select('*').eq('user_id', session.user.id).single();
+            if (biz) {
+                setSettings(biz);
+                businessId = biz.id;
+            } else {
+                // If no business settings found for user, typically handled by AuthScreen logic or new account
+            }
+        }
+
+        if (!businessId) {
+            setLoading(false);
             return;
         }
 
-        if (biz) {
-            localStorage.setItem('carbon_last_slug', biz.slug);
-            
-            setBusinessSettings({ 
-                ...biz, 
-                operating_days: biz.configs?.operating_days || [],
-                blocked_dates: biz.configs?.blocked_dates || []
-            });
-            
-            // Carrega dados reais do Supabase
-            const [servRes, portRes] = await Promise.all([
-                supabase.from('services').select('*').eq('business_id', biz.id).eq('is_active', true),
-                supabase.from('portfolio_items').select('*').eq('business_id', biz.id)
-            ]);
+        // Parallel Fetching
+        const [
+            { data: apts },
+            { data: servs },
+            { data: exps },
+            { data: port },
+            { data: revs },
+            custRes
+        ] = await Promise.all([
+            supabase.from('appointments').select('*').eq('business_id', businessId),
+            supabase.from('services').select('*').eq('business_id', businessId).eq('is_active', true),
+            supabase.from('expenses').select('*').eq('business_id', businessId),
+            supabase.from('portfolio_items').select('*').eq('business_id', businessId),
+            supabase.from('reviews').select('*').eq('business_id', businessId),
+            supabase.from('customers').select('*').eq('business_id', businessId)
+        ]);
 
-            if (servRes.data) setServices(servRes.data.map(s => ({ ...s, price: Number(s.price) })));
-            if (portRes.data) setPortfolio(portRes.data.map(p => ({ ...p, imageUrl: p.image_url, date: p.created_at })));
-        } else {
-            console.warn(`Hangar '${slug}' não encontrado.`);
-            localStorage.removeItem('carbon_last_slug'); 
-            setNotFound(true);
+        if (apts) {
+            setAppointments(apts.map(a => ({
+                ...a,
+                serviceType: a.service_type,
+                durationMinutes: a.duration_minutes,
+                customerId: a.customer_id,
+                vehicleId: a.vehicle_id
+            })));
         }
-    } catch (e) {
-        console.error("Erro dados públicos:", e);
-        setNotFound(true);
-    } finally {
-        setLoadingSession(false);
-    }
-  }, []);
+        if (servs) setServices(servs as ServiceItem[]);
+        if (exps) setExpenses(exps as Expense[]);
+        if (port) setPortfolio(port.map(p => ({ ...p, imageUrl: p.image_url })));
+        if (revs) setReviews(revs.map(r => ({ ...r, customerName: r.customer_name })));
 
-  const loadData = useCallback(async (userId: string) => {
-    if (!supabase) {
-        setLoadingSession(false);
-        return;
-    }
-
-    try {
-        // Tenta buscar configurações de negócio vinculadas a este usuário (Modo Admin)
-        const { data: biz, error: bizError } = await supabase.from('business_settings').select('*').eq('user_id', userId).maybeSingle();
-        
-        if (bizError) throw bizError;
-
-        if (biz) {
-            // É um Admin/Dono de Loja
-            localStorage.setItem('carbon_last_slug', biz.slug);
-
-            setBusinessSettings({ 
-                ...biz, 
-                operating_days: biz.configs?.operating_days || [],
-                blocked_dates: biz.configs?.blocked_dates || []
-            });
-            setCurrentPlan(biz.plan_type as PlanType);
-
-            // Busca dados em paralelo com tratamento individual de erros para não travar tudo
-            const [custRes, aptsRes, servRes, expRes, portRes] = await Promise.all([
-                supabase.from('customers').select('*').eq('business_id', biz.id),
-                // CRITICAL FIX: Ensure we fetch ALL appointments for the business, regardless of creator (user_id)
-                supabase.from('appointments').select('*').eq('business_id', biz.id),
-                supabase.from('services').select('*').eq('business_id', biz.id).order('name'),
-                supabase.from('expenses').select('*').eq('business_id', biz.id),
-                supabase.from('portfolio_items').select('*').eq('business_id', biz.id)
-            ]);
-
-            // Processamento de Clientes e Veículos (Seguro)
-            let processedCustomers: Customer[] = [];
-            if (custRes.data && custRes.data.length > 0) {
-                const customerIds = custRes.data.map(c => c.id);
-                // Busca veículos separadamente para evitar erro de Join excessivo
-                const { data: vehiclesData } = await supabase.from('vehicles').select('*').in('customer_id', customerIds);
-                
-                processedCustomers = custRes.data.map(c => ({
-                    id: c.id,
-                    name: c.name,
-                    phone: c.phone || '',
-                    email: c.email || '',
-                    totalSpent: Number(c.total_spent),
-                    lastVisit: c.last_visit,
-                    xpPoints: c.xp_points,
-                    washes: c.washes_count,
-                    vehicles: vehiclesData?.filter(v => v.customer_id === c.id).map(v => ({
-                        id: v.id,
-                        brand: v.brand || '',
-                        model: v.model || '',
-                        plate: v.plate || '',
-                        color: v.color || '',
-                        type: v.type || 'CARRO'
-                    })) || []
-                }));
-            }
-            setCustomers(processedCustomers);
-
-            if (aptsRes.data) {
-                setAppointments(aptsRes.data.map(a => ({
-                    id: a.id,
-                    customerId: a.customer_id,
-                    vehicleId: a.vehicle_id,
-                    serviceId: a.service_id,
-                    serviceType: a.service_type,
-                    date: a.date,
-                    time: a.time ? a.time.slice(0, 5) : '00:00',
-                    durationMinutes: a.duration_minutes,
-                    price: Number(a.price),
-                    status: a.status as AppointmentStatus,
-                    observation: a.observation
-                })));
-            }
-
-            if (servRes.data) setServices(servRes.data.map(s => ({ ...s, price: Number(s.price) })));
-            if (expRes.data) setExpenses(expRes.data);
-            if (portRes.data) setPortfolio(portRes.data.map(p => ({ ...p, imageUrl: p.image_url, date: p.created_at })));
-
-            setViewState('DASHBOARD');
-        } else {
-            // É um Cliente Final ou Visitante sem negócio
-            let targetSlug = new URLSearchParams(window.location.search).get('studio');
+        // Customer Logic
+        let processedCustomers: Customer[] = [];
+        if (custRes.data && custRes.data.length > 0) {
+            const customerIds = custRes.data.map((c: any) => c.id);
+            const { data: vehiclesData } = await supabase.from('vehicles').select('*').in('customer_id', customerIds);
             
-            // Tenta recuperar contexto se não houver slug na URL
-            if (!targetSlug) {
-                // 1. Tenta LocalStorage (último acessado)
-                targetSlug = localStorage.getItem('carbon_last_slug');
-                
-                // 2. Se falhar, tenta buscar o último agendamento do usuário para descobrir o Hangar
-                if (!targetSlug) {
-                     const { data: lastApt } = await supabase
-                        .from('appointments')
-                        .select('business_id')
-                        .eq('user_id', userId)
-                        .order('created_at', { ascending: false })
-                        .limit(1)
-                        .maybeSingle();
-                     
-                     if (lastApt?.business_id) {
-                         const { data: b } = await supabase.from('business_settings').select('slug').eq('id', lastApt.business_id).single();
-                         if (b) targetSlug = b.slug;
-                     }
-                }
-            }
-
-            if (targetSlug) {
-                // Atualiza URL silenciosamente para manter contexto no refresh
-                if (!window.location.search.includes('studio=')) {
-                    safeReplaceState(`${window.location.pathname}?studio=${targetSlug}`);
-                }
-
-                await loadPublicData(targetSlug);
-                setViewState('PUBLIC_BOOKING');
-            } else {
-                setViewState('WELCOME');
-            }
+            processedCustomers = custRes.data.map((c: any) => ({
+                id: c.id,
+                name: c.name,
+                phone: c.phone || '',
+                email: c.email || '',
+                totalSpent: Number(c.total_spent),
+                lastVisit: c.last_visit,
+                xpPoints: c.xp_points,
+                washes: c.washes_count,
+                vehicles: vehiclesData?.filter((v: any) => v.customer_id === c.id).map((v: any) => ({
+                    id: v.id,
+                    brand: v.brand || '',
+                    model: v.model || '',
+                    plate: v.plate || '',
+                    color: v.color || '',
+                    type: v.type || 'CARRO'
+                })) || []
+            }));
         }
+        setCustomers(processedCustomers);
+
     } catch (error) {
-        console.error("Erro ao carregar dados:", error);
-        setNotFound(true);
-        setViewState('PUBLIC_BOOKING');
+        console.error("Data Load Error:", error);
     } finally {
-        setLoadingSession(false);
+        setLoading(false);
     }
-  }, [loadPublicData]);
+  };
 
-  // Session Check
   useEffect(() => {
-    // Timeout de segurança: se carregar demorar mais que 8s, libera UI
-    safetyTimeoutRef.current = setTimeout(() => {
-        setLongLoading(true);
-    }, 8000);
-
-    const initSession = async () => {
-        if (!supabase) { setLoadingSession(false); return; }
-        
-        const { data: { session } } = await supabase.auth.getSession();
-        setCurrentUser(session?.user ?? null);
-
-        if (session?.user) {
-            // Se logado, carrega dados do usuário
-            await loadData(session.user.id);
-        } else {
-            // Se não logado, verifica se tem slug na URL
-            const slug = new URLSearchParams(window.location.search).get('studio');
-            if (slug) {
-                await loadPublicData(slug);
-                setViewState('PUBLIC_BOOKING');
-            } else {
-                setViewState('WELCOME');
-                setLoadingSession(false);
-            }
-        }
-    };
-
-    initSession();
-
-    return () => {
-        if (safetyTimeoutRef.current) clearTimeout(safetyTimeoutRef.current);
-    };
-  }, [loadData, loadPublicData]);
-
-  // Auth Flow Handler
-  const handleAuthFlow = (role: 'CLIENT' | 'ADMIN', mode: 'LOGIN' | 'REGISTER' | 'GUEST') => {
-    setAuthRole(role);
-    setViewState('AUTH');
-  };
-
-  const handleAuthSuccess = async (user: any) => {
-      setCurrentUser(user);
-      setLoadingSession(true);
-      setPreFillAuthData(null); // Limpa dados temporários após sucesso
-      await loadData(user.id);
-  };
-
-  // --- BUG FIX 2: PLAN UPDATE ---
-  const handleUpdatePlan = async (newPlan: PlanType) => {
-      setLoadingSession(true);
-      try {
-          // Atualização direta no Supabase
-          const { error } = await supabase
-              .from('business_settings')
-              .update({ plan_type: newPlan })
-              .eq('id', businessSettings.id);
-
-          if (error) throw error;
-
-          // Atualização otimista do estado local
-          setBusinessSettings((prev: any) => ({ ...prev, plan_type: newPlan }));
-          setCurrentPlan(newPlan);
-          showToast(`Plano atualizado para ${newPlan} com sucesso!`);
-      } catch (e: any) {
-          console.error("Erro ao atualizar plano:", e);
-          showToast(e.message || "Erro ao salvar plano.", 'error');
-      } finally {
-          setLoadingSession(false);
+      if (session || publicSlug) {
+          fetchData();
       }
-  };
-
-  // --- Feature: Manual Refresh ---
-  const handleRefresh = async () => {
-      if (currentUser) {
-          setLoadingSession(true);
-          await loadData(currentUser.id);
-          // setLoadingSession é tratado dentro de loadData, mas para garantir:
-          // setTimeout(() => setLoadingSession(false), 500); 
-      }
-  };
-
-  // Appointment & Customer Actions
-  const handleAddAppointment = async (newApt: Appointment, newCustomer?: Customer) => {
-    setLoadingSession(true); 
-
-    try {
-        // --- BUG FIX 1: CUSTOMER CREATION CRASH ---
-        // Se estamos vindo do CRM (Novo Cliente), não temos ServiceId.
-        // Devemos apenas criar o cliente e veículo, sem agendamento (RPC).
-        if (newCustomer && (!newApt.serviceId || newApt.serviceId === '')) {
-             // 1. Insert Customer Directly
-             const { data: custData, error: custError } = await supabase
-                .from('customers')
-                .insert({
-                    user_id: currentUser.id, // Garante owner
-                    business_id: businessSettings.id,
-                    name: newCustomer.name,
-                    phone: newCustomer.phone,
-                    email: newCustomer.email
-                })
-                .select()
-                .single();
-
-             if (custError) throw custError;
-
-             // 2. Insert Vehicle Directly
-             if (newCustomer.vehicles && newCustomer.vehicles.length > 0) {
-                 const v = newCustomer.vehicles[0];
-                 const { error: vehError } = await supabase
-                    .from('vehicles')
-                    .insert({
-                        customer_id: custData.id,
-                        brand: v.brand,
-                        model: v.model,
-                        plate: v.plate,
-                        type: 'CARRO'
-                    });
-                 if (vehError) throw vehError;
-             }
-
-             // 3. Reload Data Safely
-             await loadData(currentUser.id);
-             showToast("Cliente cadastrado com sucesso!");
-             return; // Encerra aqui para não executar lógica de agendamento
-        }
-
-        // --- NORMAL BOOKING FLOW (COM AGENDAMENTO) ---
-        
-        // 1. Sanitize Data (Fix UUID errors by converting empty strings to null)
-        const cleanServiceId = newApt.serviceId && newApt.serviceId.length > 0 ? newApt.serviceId : null;
-        const cleanVehicleId = newApt.vehicleId && newApt.vehicleId.length > 0 ? newApt.vehicleId : null;
-        
-        // 2. Scenario: New Customer WITH Appointment (Use RPC)
-        if (newCustomer) {
-            const vehicle = newCustomer.vehicles[0];
-            if (!businessSettings.slug) throw new Error("Slug da loja não encontrado.");
-
-            const { data, error } = await supabase.rpc('create_complete_booking', {
-                p_business_slug: businessSettings.slug,
-                p_customer_name: newCustomer.name,
-                p_customer_phone: newCustomer.phone,
-                p_vehicle_brand: vehicle.brand || '',
-                p_vehicle_model: vehicle.model || '',
-                p_vehicle_plate: vehicle.plate || '',
-                p_service_id: cleanServiceId,
-                p_booking_date: newApt.date,
-                p_booking_time: newApt.time
-            });
-
-            if (error) throw error;
-            if (data && !data.success) throw new Error(data.error || "Erro na criação via RPC");
-
-            await loadData(currentUser.id);
-            showToast("Agendamento criado com sucesso!");
-        } 
-        // 3. Scenario: Existing Customer (Direct Insert)
-        else {
-            if (!newApt.customerId) throw new Error("ID do cliente inválido");
-
-            const { error } = await supabase.from('appointments').insert({
-                user_id: currentUser.id,
-                business_id: businessSettings.id,
-                customer_id: newApt.customerId,
-                vehicle_id: cleanVehicleId, 
-                service_id: cleanServiceId, 
-                service_type: newApt.serviceType,
-                date: newApt.date,
-                time: newApt.time,
-                duration_minutes: newApt.durationMinutes,
-                price: newApt.price,
-                status: newApt.status,
-                observation: newApt.observation
-            });
-
-            if (error) throw error;
-            await loadData(currentUser.id); 
-            showToast("Agendamento criado com sucesso!");
-        }
-    } catch (e: any) {
-        console.error("Erro ao processar:", e);
-        showToast(e.message || "Erro na operação.", 'error');
-    } finally {
-        setLoadingSession(false);
-    }
-  };
+  }, [session, publicSlug]);
 
   const handleUpdateStatus = async (id: string, status: AppointmentStatus) => {
-    const { error } = await supabase.from('appointments').update({ status }).eq('id', id);
-    if (!error) {
-        // Atualização local para feedback instantâneo
-        setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
-        
-        // Mensagens de Toast
-        if (status === AppointmentStatus.FINALIZADO) {
-            showToast("Serviço finalizado! Receita contabilizada.");
-        } else if (status === AppointmentStatus.CONFIRMADO) {
-            showToast("Agendamento confirmado!");
-            
-            // --- FLUXO INTELIGENTE: WHATSAPP AUTOMÁTICO ---
-            // Localiza o agendamento atual e o cliente para gerar a mensagem
-            const currentApt = appointments.find(a => a.id === id);
-            const currentCustomer = customers.find(c => c.id === currentApt?.customerId);
-            const currentVehicle = currentCustomer?.vehicles.find(v => v.id === currentApt?.vehicleId);
-
-            if (currentApt && currentCustomer) {
-                // Pequeno delay para garantir que o toast apareça antes do confirm
-                setTimeout(() => {
-                    const shouldSendWhatsapp = window.confirm(
-                        "Agendamento Aceito! Deseja enviar a mensagem de confirmação para o cliente no WhatsApp?"
-                    );
-
-                    if (shouldSendWhatsapp) {
-                        const message = generateConfirmationMessage(
-                            businessSettings.business_name,
-                            currentCustomer.name,
-                            currentApt.date,
-                            currentApt.time,
-                            currentVehicle?.model || '',
-                            currentVehicle?.plate || '',
-                            currentApt.serviceType
-                        );
-                        openWhatsAppChat(currentCustomer.phone, message);
-                    }
-                }, 100);
-            }
-        }
-    }
-  };
-
-  const handleCancelAppointment = async (id: string) => {
-    const { error } = await supabase.from('appointments').update({ status: AppointmentStatus.CANCELADO }).eq('id', id);
-    if (!error) {
-        setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: AppointmentStatus.CANCELADO } : a));
-        showToast("Agendamento cancelado.");
-    }
-  };
-
-  const handleDeleteAppointment = async (id: string) => {
-      const { error } = await supabase.from('appointments').delete().eq('id', id);
-      if (!error) {
-          setAppointments(prev => prev.filter(a => a.id !== id));
-          showToast("Registro excluído permanentemente.");
+      const { success } = await save('appointments', { id, status });
+      if (success) {
+          setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
       }
   };
 
-  // Public Booking Handler
-  const handlePublicBooking = async (apt: Appointment, customerData: any) => {
-      // Usa RPC para transação atômica real
-      const { data, error } = await supabase.rpc('create_complete_booking', {
-          p_business_slug: businessSettings.slug,
-          p_customer_name: customerData.name,
-          p_customer_phone: customerData.phone,
-          p_vehicle_brand: customerData.vehicles[0].brand,
-          p_vehicle_model: customerData.vehicles[0].model,
-          p_vehicle_plate: customerData.vehicles[0].plate,
-          p_service_id: apt.serviceId,
-          p_booking_date: apt.date,
-          p_booking_time: apt.time
-      });
+  const handleAddAppointment = async (apt: Appointment, newCustomer?: Customer) => {
+      // Logic to save customer/vehicle first if new, then appointment
+      if (newCustomer) {
+          const { data: custData } = await supabase.from('customers').insert({
+              business_id: settings?.id,
+              name: newCustomer.name,
+              phone: newCustomer.phone,
+              email: newCustomer.email
+          }).select().single();
+          
+          if (custData) {
+              const { data: vehData } = await supabase.from('vehicles').insert({
+                  customer_id: custData.id,
+                  brand: newCustomer.vehicles[0].brand,
+                  model: newCustomer.vehicles[0].model,
+                  plate: newCustomer.vehicles[0].plate,
+                  type: 'CARRO'
+              }).select().single();
 
-      if (error || (data && !data.success)) {
-          console.error("Booking Error:", error || data?.error);
-          alert("Erro ao realizar agendamento. Tente novamente.");
-          return false;
+              if (vehData) {
+                  apt.customerId = custData.id;
+                  apt.vehicleId = vehData.id;
+                  fetchData(); 
+              }
+          }
       }
 
-      // Se usuário estiver logado, atualiza lista local
-      if (currentUser) {
-          // Pequeno delay para propagação
-          setTimeout(() => loadPublicData(businessSettings.slug), 500);
-      }
+      const payload = {
+        business_id: settings?.id,
+        customer_id: apt.customerId,
+        vehicle_id: apt.vehicleId,
+        service_id: apt.serviceId,
+        service_type: apt.serviceType,
+        date: apt.date,
+        time: apt.time,
+        duration_minutes: apt.durationMinutes,
+        price: apt.price,
+        status: apt.status,
+        observation: apt.observation,
+        box_id: apt.boxId
+      };
 
-      return true;
+      const { data: aptData } = await supabase.from('appointments').insert(payload).select().single();
+      if (aptData) {
+          fetchData();
+      }
   };
 
-  // Loading Screen
-  if (loadingSession) {
-    return (
-      <div className="min-h-screen bg-[#020202] flex flex-col items-center justify-center relative font-sans">
-        <div className="relative">
-            <div className="w-16 h-16 rounded-full border-2 border-red-600/30 border-t-red-600 animate-spin" />
-            <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-2 h-2 bg-red-600 rounded-full" />
-            </div>
-        </div>
-        <p className="mt-8 text-zinc-500 text-[10px] font-black uppercase tracking-[0.3em] animate-pulse">Carregando Sistema</p>
-        
-        {longLoading && (
-            <button 
-                onClick={handleLogout}
-                className="mt-8 text-red-500 hover:text-red-400 text-xs underline underline-offset-4"
-            >
-                Demorando muito? Recarregar
-            </button>
-        )}
-      </div>
-    );
+  if (loading) return <div className="h-screen bg-black flex items-center justify-center"><Loader2 className="animate-spin text-red-600" size={32} /></div>;
+
+  if (publicSlug && settings) {
+      return <PublicBooking 
+        currentUser={session?.user}
+        businessSettings={settings}
+        services={services}
+        existingAppointments={appointments}
+        portfolio={portfolio}
+        reviews={reviews}
+        onBookingComplete={async (apt, newCustomer) => {
+            await handleAddAppointment(apt, newCustomer);
+            return true;
+        }}
+        onExit={() => {
+            supabase.auth.signOut();
+            setPublicSlug(null);
+            window.history.pushState({}, '', '/');
+        }}
+        onLoginRequest={() => {
+            setPublicSlug(null); 
+            window.history.pushState({}, '', '/');
+        }}
+        onRegisterRequest={(data) => {
+             setPublicSlug(null);
+             window.history.pushState({}, '', '/');
+             setAuthRole('CLIENT');
+             setPreFillAuth(data);
+             setShowAuth(true);
+        }}
+      />
   }
 
-  // Views Logic
-  if (viewState === 'WELCOME') {
-    return <WelcomeScreen onSelectFlow={handleAuthFlow} />;
+  if (!session) {
+      if (showAuth) {
+          return <AuthScreen 
+            role={authRole} 
+            onLogin={() => setShowAuth(false)} 
+            onBack={() => setShowAuth(false)}
+            preFillData={preFillAuth} 
+          />;
+      }
+      return <WelcomeScreen onSelectFlow={(role, mode) => {
+          setAuthRole(role);
+          setShowAuth(true);
+      }} />;
   }
 
-  if (viewState === 'AUTH') {
-    return <AuthScreen 
-        role={authRole} 
-        onLogin={handleAuthSuccess} 
-        onBack={() => setViewState('WELCOME')} 
-        preFillData={preFillAuthData}
-    />;
-  }
-
-  if (viewState === 'PUBLIC_BOOKING') {
-    if (notFound) {
-        return (
-            <div className="min-h-screen bg-[#020202] flex items-center justify-center p-4 font-sans">
-                <div className="text-center max-w-md animate-in zoom-in duration-300">
-                    <div className="w-20 h-20 bg-zinc-900 border border-white/10 rounded-[2rem] flex items-center justify-center mx-auto mb-6 shadow-2xl">
-                        <Store size={32} className="text-zinc-600" />
-                    </div>
-                    <h2 className="text-2xl font-black text-white uppercase tracking-tight mb-2">Hangar Não Encontrado</h2>
-                    <p className="text-zinc-500 text-sm mb-8 leading-relaxed">
-                        O estabelecimento solicitado não existe ou o link está incorreto. Verifique o endereço e tente novamente.
-                    </p>
-                    <button 
-                        onClick={() => { 
-                            setNotFound(false); 
-                            setViewState('WELCOME'); 
-                            // Limpa cache e URL para evitar loop
-                            localStorage.removeItem('carbon_last_slug');
-                            safePushState(window.location.pathname);
-                        }}
-                        className="px-8 py-4 bg-white text-black rounded-xl text-xs font-black uppercase tracking-widest hover:bg-zinc-200 transition-all shadow-glow"
-                    >
-                        Voltar ao Início
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
-    return (
-        <PublicBooking 
-            currentUser={currentUser}
-            businessSettings={businessSettings}
-            services={services}
-            portfolio={portfolio}
-            existingAppointments={appointments}
-            onBookingComplete={handlePublicBooking}
-            onExit={() => {
-                if (currentUser) handleLogout(); // Se logado, faz logout real
-                else setViewState('WELCOME'); // Se visitante, volta para welcome
-            }}
-            onLoginRequest={() => handleAuthFlow('CLIENT', 'LOGIN')}
-            onRegisterRequest={(data) => {
-                setPreFillAuthData(data);
-                handleAuthFlow('CLIENT', 'REGISTER');
-            }}
-        />
-    );
-  }
+  if (!settings) return <div className="h-screen bg-black flex items-center justify-center text-white">Carregando Hangar...</div>;
 
   return (
-    <div className="flex min-h-screen bg-[#020202] text-zinc-100 font-sans selection:bg-red-500/30">
-      
-      {/* Mobile Menu Button */}
-      {!isSidebarOpen && (
-          <button 
-            onClick={() => setIsSidebarOpen(true)}
-            className="md:hidden fixed top-4 right-4 z-50 p-3 bg-zinc-900/80 backdrop-blur border border-white/10 rounded-xl text-white shadow-lg"
-          >
-            <Menu size={20} />
-          </button>
-      )}
-
-      {/* Main Sidebar */}
-      <Sidebar 
-        activeTab={activeTab} 
-        setActiveTab={setActiveTab} 
-        currentPlan={currentPlan}
-        isOpen={isSidebarOpen}
-        onClose={() => setIsSidebarOpen(false)}
-        onUpgrade={() => setActiveTab('settings')}
-        onLogout={handleLogout}
-        logoUrl={businessSettings.profile_image_url}
-        businessName={businessSettings.business_name}
-        slug={businessSettings.slug}
-      />
-
-      <main className="flex-1 w-full max-w-[100vw] overflow-x-hidden relative">
+    <div className="flex h-screen bg-black font-sans selection:bg-red-900 selection:text-white">
+        <Sidebar 
+            activeTab={activeTab} 
+            setActiveTab={setActiveTab} 
+            currentPlan={settings.plan_type || PlanType.START}
+            isOpen={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+            onUpgrade={() => setActiveTab('assinatura')} 
+            onLogout={() => supabase.auth.signOut()}
+            logoUrl={settings.profile_image_url}
+            businessName={settings.business_name}
+            slug={settings.slug}
+        />
         
-        {/* Toast Notification */}
-        <div className={cn(
-            "fixed top-6 right-6 z-[100] transition-all duration-500 ease-out transform",
-            toast ? "translate-y-0 opacity-100" : "-translate-y-10 opacity-0 pointer-events-none"
-        )}>
-            {toast && (
-                <div className={cn(
-                    "flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl border backdrop-blur-md",
-                    toast.type === 'error' ? "bg-red-900/80 border-red-500/30 text-white" : "bg-zinc-900/80 border-green-500/30 text-white"
-                )}>
-                    {toast.type === 'error' ? <AlertCircle size={18} className="text-red-400" /> : <CheckCircle2 size={18} className="text-green-400" />}
-                    <span className="text-xs font-bold uppercase tracking-wide">{toast.msg}</span>
-                </div>
-            )}
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+            <button 
+                onClick={() => setSidebarOpen(true)}
+                className="md:hidden absolute top-4 left-4 z-50 p-2 bg-zinc-900 rounded-lg text-white"
+            >
+                <Menu size={20} />
+            </button>
+
+            <SubscriptionGuard 
+                businessId={settings.id || ''} 
+                onPlanChange={fetchData}
+            >
+                <main className="flex-1 overflow-y-auto bg-black custom-scrollbar">
+                    {activeTab === 'dashboard' && (
+                        <Dashboard 
+                            currentPlan={settings.plan_type || PlanType.START}
+                            appointments={appointments}
+                            customers={customers}
+                            onUpgrade={() => setActiveTab('settings')}
+                            setActiveTab={setActiveTab}
+                            businessSettings={settings}
+                            onUpdateStatus={handleUpdateStatus}
+                            onCancelAppointment={(id) => handleUpdateStatus(id, AppointmentStatus.CANCELADO)}
+                            onDeleteAppointment={async (id) => { await supabase.from('appointments').delete().eq('id', id); fetchData(); }}
+                            onRefresh={fetchData}
+                        />
+                    )}
+                    {activeTab === 'schedule' && (
+                        <Schedule 
+                            appointments={appointments}
+                            customers={customers}
+                            onAddAppointment={handleAddAppointment}
+                            onUpdateStatus={handleUpdateStatus}
+                            onCancelAppointment={(id) => handleUpdateStatus(id, AppointmentStatus.CANCELADO)}
+                            onDeleteAppointment={async (id) => { await supabase.from('appointments').delete().eq('id', id); fetchData(); }}
+                            settings={settings}
+                            services={services}
+                            onUpgrade={() => setActiveTab('settings')}
+                            currentPlan={settings.plan_type}
+                            onRefresh={fetchData}
+                        />
+                    )}
+                    {activeTab === 'crm' && (
+                        <CRM 
+                            customers={customers}
+                            onAddCustomer={async (c) => { 
+                                const { error } = await supabase.from('customers').insert({
+                                    business_id: settings?.id,
+                                    ...c
+                                });
+                                if(!error) fetchData(); 
+                            }}
+                            onDeleteCustomer={async (id) => { await supabase.from('customers').delete().eq('id', id); fetchData(); }}
+                            businessSettings={settings}
+                            onUpdateSettings={async (s) => { 
+                                const { success } = await save('business_settings', s);
+                                if (success) fetchData();
+                            }}
+                        />
+                    )}
+                    {activeTab === 'finance' && (
+                        <FinancialModule 
+                             appointments={appointments}
+                             expenses={expenses}
+                             onAddExpense={async (e) => { 
+                                 await save('expenses', { ...e, business_id: settings.id }); 
+                                 fetchData(); 
+                             }}
+                             onDeleteExpense={async (id) => { await supabase.from('expenses').delete().eq('id', id); fetchData(); }}
+                             currentPlan={settings.plan_type || PlanType.START}
+                             onUpgrade={() => setActiveTab('settings')}
+                             businessId={settings.id}
+                        />
+                    )}
+                    {activeTab === 'marketing' && (
+                        <MarketingModule 
+                            portfolio={portfolio}
+                            onAddPortfolioItem={(item) => setPortfolio(prev => [item, ...prev])}
+                            onDeletePortfolioItem={async (id) => { await supabase.from('portfolio_items').delete().eq('id', id); fetchData(); }}
+                            reviews={reviews}
+                            onReplyReview={() => {}}
+                            currentPlan={settings.plan_type || PlanType.START}
+                            onUpgrade={() => setActiveTab('settings')}
+                            businessId={settings.id}
+                        />
+                    )}
+                    {activeTab === 'settings' && (
+                        <Settings 
+                            currentPlan={settings.plan_type || PlanType.START}
+                            onUpgrade={async (plan) => { 
+                                await save('business_settings', { id: settings.id, plan_type: plan }); 
+                                fetchData(); 
+                            }}
+                            settings={settings}
+                            onUpdateSettings={(s) => setSettings(s)}
+                            services={services}
+                            onAddService={async (s) => { 
+                                await save('services', { ...s, business_id: settings.id, is_active: true }); 
+                                fetchData(); 
+                            }}
+                            onDeleteService={async (id) => { await supabase.from('services').delete().eq('id', id); fetchData(); }}
+                        />
+                    )}
+                </main>
+            </SubscriptionGuard>
         </div>
-
-        <SubscriptionGuard 
-            businessId={businessSettings.id} 
-            onPlanChange={() => loadData(currentUser?.id)}
-        >
-            {activeTab === 'dashboard' && (
-              <Dashboard 
-                currentPlan={currentPlan} 
-                appointments={appointments}
-                customers={customers}
-                onUpgrade={() => setActiveTab('settings')}
-                setActiveTab={setActiveTab}
-                businessSettings={businessSettings}
-                onUpdateStatus={handleUpdateStatus}
-                onCancelAppointment={handleCancelAppointment}
-                onDeleteAppointment={handleDeleteAppointment}
-                onRefresh={handleRefresh}
-              />
-            )}
-            
-            {activeTab === 'schedule' && (
-              <Schedule 
-                appointments={appointments}
-                customers={customers}
-                onAddAppointment={handleAddAppointment}
-                onUpdateStatus={handleUpdateStatus}
-                onCancelAppointment={handleCancelAppointment}
-                onDeleteAppointment={handleDeleteAppointment}
-                currentPlan={currentPlan}
-                onUpgrade={() => setActiveTab('settings')}
-                settings={businessSettings}
-                services={services}
-                onRefresh={handleRefresh}
-              />
-            )}
-            
-            {activeTab === 'crm' && (
-              <CRM 
-                customers={customers} 
-                // Passa o Appointment vazio para indicar criação APENAS de cliente
-                onAddCustomer={(c) => handleAddAppointment({
-                    id: '', customerId: '', vehicleId: '', serviceId: '', serviceType: '', date: '', time: '', durationMinutes: 0, price: 0, status: AppointmentStatus.NOVO
-                } as any, c)}
-                onDeleteCustomer={async (id) => {
-                    const { error } = await supabase.from('customers').delete().eq('id', id);
-                    if (!error) {
-                        setCustomers(prev => prev.filter(c => c.id !== id));
-                        showToast("Cliente removido.");
-                    }
-                }}
-                businessSettings={businessSettings}
-                onUpdateSettings={async (s) => {
-                    const { error } = await supabase.from('business_settings').update({ loyalty_program_enabled: s.loyalty_program_enabled }).eq('id', s.id);
-                    if (!error) setBusinessSettings(s);
-                }}
-              />
-            )}
-            
-            {activeTab === 'finance' && (
-              <FinancialModule 
-                appointments={appointments}
-                expenses={expenses}
-                onAddExpense={(e) => setExpenses(prev => [...prev, e])}
-                onEditExpense={(e) => setExpenses(prev => prev.map(ex => ex.id === e.id ? e : ex))}
-                onDeleteExpense={async (id) => {
-                    const { error } = await supabase.from('expenses').delete().eq('id', id);
-                    if (!error) setExpenses(prev => prev.filter(e => e.id !== id));
-                }}
-                currentPlan={currentPlan}
-                onUpgrade={() => setActiveTab('settings')}
-                businessId={businessSettings.id}
-              />
-            )}
-
-            {activeTab === 'marketing' && (
-                <MarketingModule 
-                    portfolio={portfolio}
-                    onAddPortfolioItem={(item) => setPortfolio(prev => [item, ...prev])}
-                    onDeletePortfolioItem={async (id) => {
-                        const { error } = await supabase.from('portfolio_items').delete().eq('id', id);
-                        if(!error) setPortfolio(prev => prev.filter(p => p.id !== id));
-                    }}
-                    reviews={[]}
-                    onReplyReview={() => {}}
-                    currentPlan={currentPlan}
-                    onUpgrade={() => setActiveTab('settings')}
-                    businessId={businessSettings.id}
-                />
-            )}
-            
-            {activeTab === 'settings' && (
-              <Settings 
-                currentPlan={currentPlan}
-                onUpgrade={handleUpdatePlan} // Passando a nova função de persistência
-                settings={businessSettings}
-                onUpdateSettings={setBusinessSettings}
-                services={services}
-                onAddService={(s) => setServices(prev => [...prev, s])}
-                onDeleteService={async (id) => {
-                    const { error } = await supabase.from('services').update({ is_active: false }).eq('id', id);
-                    if (!error) setServices(prev => prev.filter(s => s.id !== id));
-                }}
-              />
-            )}
-        </SubscriptionGuard>
-      </main>
     </div>
   );
-};
+}
 
 export default App;
