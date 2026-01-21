@@ -197,6 +197,9 @@ function App() {
 
             const [apts, servs, bays, exps, port, revs, custRes] = results.map(r => r.status === 'fulfilled' ? r.value : { data: null });
 
+            // Store raw appointments for LTV calculation
+            const rawAppointments = apts.data || [];
+
             if (apts.data) {
                 setAppointments(apts.data.map((a: any) => ({
                     ...a, serviceType: a.service_type, durationMinutes: a.duration_minutes, customerId: a.customer_id, vehicleId: a.vehicle_id, boxId: a.box_id
@@ -225,12 +228,27 @@ function App() {
             if (custRes.data && custRes.data.length > 0) {
                 const customerIds = custRes.data.map((c: any) => c.id);
                 const { data: vehiclesData } = await supabase.from('vehicles').select('*').in('customer_id', customerIds);
-                processedCustomers = custRes.data.map((c: any) => ({
-                    id: c.id, name: c.name, phone: c.phone || '', email: c.email || '', totalSpent: Number(c.total_spent), lastVisit: c.last_visit, xpPoints: c.xp_points, washes: c.washes_count,
-                    vehicles: vehiclesData?.filter((v: any) => v.customer_id === c.id).map((v: any) => ({
-                        id: v.id, brand: v.brand || '', model: v.model || '', plate: v.plate || '', color: v.color || '', type: v.type || 'CARRO'
-                    })) || []
-                }));
+                
+                processedCustomers = custRes.data.map((c: any) => {
+                    // Calculate LTV: Sum of finalized appointments for this customer
+                    const calculatedLTV = rawAppointments
+                        .filter((a: any) => a.customer_id === c.id && a.status === 'FINALIZADO')
+                        .reduce((sum: number, a: any) => sum + (Number(a.price) || 0), 0);
+
+                    return {
+                        id: c.id, 
+                        name: c.name, 
+                        phone: c.phone || '', 
+                        email: c.email || '', 
+                        totalSpent: calculatedLTV, 
+                        lastVisit: c.last_visit, 
+                        xpPoints: c.xp_points, 
+                        washes: c.washes_count,
+                        vehicles: vehiclesData?.filter((v: any) => v.customer_id === c.id).map((v: any) => ({
+                            id: v.id, brand: v.brand || '', model: v.model || '', plate: v.plate || '', color: v.color || '', type: v.type || 'CARRO'
+                        })) || []
+                    };
+                });
             }
             setCustomers(processedCustomers);
         }
@@ -280,6 +298,11 @@ function App() {
                       customerName: customer.name
                   });
               }
+          }
+          
+          // Re-fetch data if status changes to FINALIZADO to update LTV
+          if (status === AppointmentStatus.FINALIZADO) {
+              fetchData();
           }
       }
   };
@@ -402,6 +425,17 @@ function App() {
 
   if (loading) return <div className="h-screen bg-black flex items-center justify-center"><Loader2 className="animate-spin text-red-600" size={32} /></div>;
 
+  // PRIORITY 1: Auth Screen (Allows public users to register seamlessly)
+  if (showAuth && !session) {
+      return <AuthScreen 
+        role={authRole} 
+        onLogin={() => { setShowAuth(false); fetchData(); }} 
+        onBack={() => setShowAuth(false)} 
+        preFillData={preFillAuth} 
+      />;
+  }
+
+  // PRIORITY 2: Public Booking Interface (Guest or Client)
   if ((publicSlug || session?.user?.user_metadata?.role === 'CLIENT') && settings) {
       return <PublicBooking 
         currentUser={session?.user}
@@ -424,11 +458,12 @@ function App() {
       />
   }
 
+  // PRIORITY 3: Landing Screen (No session, no public slug)
   if (!session) {
-      if (showAuth) return <AuthScreen role={authRole} onLogin={() => { setShowAuth(false); fetchData(); }} onBack={() => setShowAuth(false)} preFillData={preFillAuth} />;
       return <WelcomeScreen onSelectFlow={(role) => { setAuthRole(role); setShowAuth(true); }} />;
   }
 
+  // PRIORITY 4: Admin Dashboard (Logged in & Settings Loaded)
   if (!settings) return <div className="h-screen bg-black flex items-center justify-center text-white">Configurações não encontradas.</div>;
 
   return (

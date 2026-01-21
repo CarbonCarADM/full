@@ -394,7 +394,42 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                             </div>}
                             {step === 2 && !identifiedCustomerId && (<div className="space-y-4 animate-in slide-in-from-right-4"><h3 className="text-xs font-black text-white uppercase pl-1">Seus Dados</h3><input placeholder="Nome Completo" className="w-full bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={guestForm.name} onChange={e => setGuestForm({ ...guestForm, name: e.target.value })} /><input placeholder="Telefone" className="w-full bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={guestForm.phone} onChange={e => setGuestForm({ ...guestForm, phone: formatPhone(e.target.value) })} /></div>)}
                             {step === 3 && (<div className="space-y-4 animate-in slide-in-from-right-4"><h3 className="text-xs font-black text-white uppercase pl-1">Veículo</h3><div className="grid grid-cols-2 gap-3"><input placeholder="Marca" className="bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={vehicleForm.brand} onChange={e => setVehicleForm({ ...vehicleForm, brand: e.target.value })} /><input placeholder="Modelo" className="bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={vehicleForm.model} onChange={e => setVehicleForm({ ...vehicleForm, model: e.target.value })} /></div><input placeholder="Placa" className="w-full bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={vehicleForm.plate} onChange={e => setVehicleForm({ ...vehicleForm, plate: formatPlate(e.target.value) })} /></div>)}
-                            {step === 4 && (<div className="flex flex-col items-center justify-center py-10 animate-in zoom-in-95 text-center px-4"><div className="w-20 h-20 bg-green-500/10 border border-green-500/20 rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(34,197,94,0.2)]"><Check size={32} className="text-green-500" /></div><h2 className="text-2xl font-black text-white uppercase mb-2 tracking-tight">Agendamento Confirmado! 🚀</h2><p className="text-zinc-400 text-xs font-medium max-w-xs mx-auto leading-relaxed mb-8">Seu serviço foi agendado para <span className="text-white font-bold">{new Date(selectedDate + 'T12:00:00').toLocaleDateString()}</span> às <span className="text-white font-bold">{selectedTime}</span>.</p>{!currentUser && <div className="bg-zinc-900/50 border border-white/10 rounded-2xl p-6 w-full max-w-sm mb-6 relative overflow-hidden group"><div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-red-600 to-red-500" /><p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest mb-3">Acompanhamento em Tempo Real</p><p className="text-xs text-white mb-6 leading-relaxed">Crie sua senha agora para acompanhar o status do serviço e ver o histórico completo.</p><button onClick={() => onRegisterRequest && onRegisterRequest({ name: guestForm.name, phone: guestForm.phone })} className="w-full py-4 bg-white text-black rounded-xl font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 hover:bg-zinc-200 transition-all shadow-glow">Criar Conta e Acompanhar <ArrowUpRight size={14} /></button></div>}<button onClick={() => { setCurrentScreen('HOME'); setStep(1); }} className="text-zinc-600 hover:text-white text-[10px] font-bold uppercase tracking-widest py-3 px-6 rounded-xl hover:bg-white/5 transition-all">Voltar ao Início</button></div>)}
+                            {step === 4 && (
+                                <div className="flex flex-col items-center justify-center py-10 animate-in zoom-in-95 text-center px-4">
+                                    <div className="w-20 h-20 bg-green-500/10 border border-green-500/20 rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(34,197,94,0.2)]">
+                                        <Check size={32} className="text-green-500" />
+                                    </div>
+                                    <h2 className="text-2xl font-black text-white uppercase mb-2 tracking-tight">Agendamento Confirmado! 🚀</h2>
+                                    <p className="text-zinc-400 text-xs font-medium max-w-xs mx-auto leading-relaxed mb-8">
+                                        Seu serviço foi agendado para <span className="text-white font-bold">{new Date(selectedDate + 'T12:00:00').toLocaleDateString()}</span> às <span className="text-white font-bold">{selectedTime}</span>.
+                                    </p>
+                                    
+                                    {!currentUser && (
+                                        <div className="bg-[#09090b] border border-red-600/30 rounded-[2rem] p-6 w-full max-w-sm mb-6 relative overflow-hidden group shadow-[0_0_30px_rgba(220,38,38,0.1)]">
+                                            <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-red-600 to-red-500" />
+                                            <p className="text-[10px] font-black uppercase text-red-500 tracking-widest mb-3 flex items-center justify-center gap-2">
+                                                <User size={12} /> Acompanhe seu Agendamento
+                                            </p>
+                                            <p className="text-xs text-white mb-6 leading-relaxed">
+                                                Crie sua conta agora para receber atualizações, ver o histórico e acumular pontos de fidelidade.
+                                            </p>
+                                            <button 
+                                                onClick={() => onRegisterRequest && onRegisterRequest({ name: guestForm.name, phone: guestForm.phone })} 
+                                                className="w-full py-4 bg-white text-black rounded-xl font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 hover:bg-zinc-200 transition-all shadow-glow hover:scale-[1.02] active:scale-[0.98]"
+                                            >
+                                                Criar Minha Conta <ArrowUpRight size={14} />
+                                            </button>
+                                        </div>
+                                    )}
+                                    
+                                    <button 
+                                        onClick={() => { setCurrentScreen('HOME'); setStep(1); }} 
+                                        className="text-zinc-600 hover:text-white text-[10px] font-bold uppercase tracking-widest py-3 px-6 rounded-xl hover:bg-white/5 transition-all"
+                                    >
+                                        Voltar ao Início
+                                    </button>
+                                </div>
+                            )}
                             {step < 4 && (<div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black to-transparent z-50 flex justify-center"><button onClick={() => { if (step === 1) { if (selectedDate && selectedTime) setStep(2); } else if (step === 2) { if (guestForm.name && guestForm.phone) setStep(3); } else if (step === 3) { if (vehicleForm.brand && vehicleForm.model) handleFinalize(); } }} disabled={loading || (step === 1 && (!selectedDate || !selectedTime))} className={cn("w-full max-w-sm py-4 rounded-xl font-black uppercase tracking-widest text-[10px] shadow-glow-red transition-all flex items-center justify-center gap-2", (step === 1 && (!selectedDate || !selectedTime)) ? "bg-zinc-900 text-zinc-600 cursor-not-allowed" : "bg-red-600 text-white hover:bg-red-500")}>{loading ? <Loader2 className="animate-spin" size={14} /> : (step === 3 ? "Finalizar" : "Continuar")}</button></div>)}
                         </div>
                     )}

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Lock, ChevronRight, ScanLine, ArrowRight, LogIn, UserPlus, ChevronLeft, Search, ExternalLink } from 'lucide-react';
+import { Lock, ChevronRight, ScanLine, ArrowRight, LogIn, UserPlus, ChevronLeft } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface WelcomeScreenProps {
@@ -10,21 +10,12 @@ interface WelcomeScreenProps {
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onSelectFlow }) => {
   const [booting, setBooting] = useState(true);
   const [view, setView] = useState<'INITIAL' | 'CLIENT_OPTIONS'>('INITIAL');
-  const [showSlugInput, setShowSlugInput] = useState(false);
-  const [slug, setSlug] = useState('');
 
   useEffect(() => {
     // Simula um carregamento rápido do sistema
     const timer = setTimeout(() => setBooting(false), 800);
     return () => clearTimeout(timer);
   }, []);
-
-  const handleSlugAccess = (e: React.FormEvent) => {
-      e.preventDefault();
-      if(slug.trim()) {
-          window.location.href = `?studio=${slug.trim()}`;
-      }
-  };
 
   return (
     <div className="min-h-screen bg-[#000000] flex flex-col font-sans relative overflow-hidden selection:bg-red-900 selection:text-white">
@@ -62,38 +53,6 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onSelectFlow }) =>
           </div>
 
           <div className="flex items-center gap-2">
-              {/* SHORTCUT FOR TESTING */}
-              <button 
-                onClick={() => window.location.href = '?studio=demo-studio'}
-                className="hidden md:flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 hover:border-red-500/50 hover:bg-red-500/10 transition-all group mr-2"
-              >
-                  <span className="text-[9px] font-bold text-zinc-400 group-hover:text-red-400 uppercase tracking-widest">Painel Cliente (Teste)</span>
-                  <ExternalLink size={12} className="text-zinc-500 group-hover:text-red-500" />
-              </button>
-
-              {showSlugInput ? (
-                  <form onSubmit={handleSlugAccess} className="flex items-center bg-white/[0.05] border border-white/10 rounded-full px-2 py-1 backdrop-blur-md animate-in slide-in-from-right-4">
-                      <input 
-                        autoFocus
-                        value={slug}
-                        onChange={e => setSlug(e.target.value)}
-                        placeholder="Slug do Hangar"
-                        className="bg-transparent border-none outline-none text-[9px] font-bold text-white uppercase w-32 px-2 placeholder:text-zinc-600"
-                      />
-                      <button type="submit" className="w-6 h-6 rounded-full bg-red-600 flex items-center justify-center hover:bg-red-500 transition-colors">
-                          <ChevronRight size={12} className="text-white"/>
-                      </button>
-                  </form>
-              ) : (
-                  <button 
-                    onClick={() => setShowSlugInput(true)}
-                    className="group flex items-center gap-2 px-4 py-2 rounded-full border border-transparent hover:border-white/10 hover:bg-white/[0.05] transition-all"
-                  >
-                      <Search size={12} className="text-zinc-600 group-hover:text-white transition-colors" />
-                      <span className="text-[9px] font-bold text-zinc-600 group-hover:text-zinc-300 uppercase tracking-widest hidden md:block">Buscar Hangar</span>
-                  </button>
-              )}
-
               <button 
                 onClick={() => onSelectFlow('ADMIN', 'LOGIN')}
                 className="group flex items-center gap-3 px-5 py-2 rounded-full border border-white/5 bg-white/[0.02] hover:bg-white/[0.08] hover:border-white/10 transition-all duration-500 backdrop-blur-md"
