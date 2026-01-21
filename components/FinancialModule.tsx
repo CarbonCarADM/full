@@ -94,6 +94,30 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ appointments, 
         return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
     }, [expenses]);
 
+    // Unify Transactions for the List View
+    const incomeTransactions = useMemo(() => {
+        const manualIncomes = expenses
+            .filter(e => e.type === 'RECEITA')
+            .map(e => ({ ...e, source: 'EXPENSE' as const }));
+
+        const serviceIncomes = appointments
+            .filter(a => a.status === AppointmentStatus.FINALIZADO)
+            .map(a => ({
+                id: a.id,
+                description: a.serviceType || 'Serviço Realizado',
+                amount: a.price,
+                date: a.date,
+                category: 'SERVIÇO',
+                type: 'RECEITA' as const,
+                source: 'APPOINTMENT' as const,
+                payment_method: 'SISTEMA'
+            }));
+
+        return [...manualIncomes, ...serviceIncomes].sort((a, b) => 
+            new Date(b.date).getTime() - new Date(a.date).getTime()
+        );
+    }, [appointments, expenses]);
+
     const handleSaveTransaction = async () => {
         if (!newTransaction.description || !newTransaction.amount) return;
         
@@ -248,22 +272,36 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ appointments, 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6">
                 <div className="bg-[#09090b] border border-white/5 rounded-[1.5rem] p-5 md:p-6 h-full">
                     <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-4 flex items-center gap-2"><ArrowUpRight className="text-green-500" size={14}/> Entradas</h3>
-                    <div className="space-y-1">
-                        {expenses.filter(e => e.type === 'RECEITA').map(t => (
+                    <div className="space-y-1 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+                        {incomeTransactions.map(t => (
                             <div key={t.id} className="flex justify-between items-center p-2.5 hover:bg-white/5 rounded-lg transition-colors group">
-                                <div><p className="text-xs font-bold text-white uppercase">{t.description}</p><p className="text-[9px] font-bold text-zinc-600 uppercase">{new Date(t.date).toLocaleDateString()} • {t.category}</p></div>
-                                <div className="flex items-center gap-4"><span className="text-sm font-black text-green-500">R$ {Number(t.amount).toFixed(2)}</span>
-                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button onClick={() => { setEditingExpenseId(t.id); setNewTransaction(t); setTransactionType('RECEITA'); setIsTransactionModalOpen(true); }} className="p-1.5 hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-white"><Pencil size={12}/></button>
-                                    <button onClick={() => handleRequestDelete(t.id)} className="p-1.5 hover:bg-red-900/20 rounded-md text-zinc-400 hover:text-red-500"><Trash2 size={12}/></button>
-                                </div></div>
+                                <div>
+                                    <p className="text-xs font-bold text-white uppercase">{t.description}</p>
+                                    <p className="text-[9px] font-bold text-zinc-600 uppercase">
+                                        {new Date(t.date).toLocaleDateString()} • {t.category || 'SERVIÇO'}
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                    <span className="text-sm font-black text-green-500">R$ {Number(t.amount).toFixed(2)}</span>
+                                    {t.source === 'EXPENSE' && (
+                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button onClick={() => { setEditingExpenseId(t.id); setNewTransaction(t); setTransactionType('RECEITA'); setIsTransactionModalOpen(true); }} className="p-1.5 hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-white"><Pencil size={12}/></button>
+                                            <button onClick={() => handleRequestDelete(t.id)} className="p-1.5 hover:bg-red-900/20 rounded-md text-zinc-400 hover:text-red-500"><Trash2 size={12}/></button>
+                                        </div>
+                                    )}
+                                    {/* Placeholder to align if needed, or keeping cleaner for appointments */}
+                                    {t.source === 'APPOINTMENT' && <div className="w-8" />} 
+                                </div>
                             </div>
                         ))}
+                        {incomeTransactions.length === 0 && (
+                            <p className="text-[10px] text-zinc-600 font-bold uppercase text-center py-8">Nenhuma receita registrada</p>
+                        )}
                     </div>
                 </div>
                 <div className="bg-[#09090b] border border-white/5 rounded-[1.5rem] p-5 md:p-6 h-full">
                     <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-4 flex items-center gap-2"><ArrowDownLeft className="text-red-500" size={14}/> Saídas</h3>
-                    <div className="space-y-1">
+                    <div className="space-y-1 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
                         {expenses.filter(e => e.type === 'DESPESA' || !e.type).map(t => (
                             <div key={t.id} className="flex justify-between items-center p-2.5 hover:bg-white/5 rounded-lg transition-colors group">
                                 <div><p className="text-xs font-bold text-white uppercase">{t.description}</p><p className="text-[9px] font-bold text-zinc-600 uppercase">{new Date(t.date).toLocaleDateString()} • {t.category}</p></div>
