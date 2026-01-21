@@ -4,6 +4,7 @@ import { LogIn, UserPlus, ArrowLeft, RefreshCw, Fingerprint, Mail, Phone, User, 
 import { cn, formatPhone } from '../lib/utils';
 import { supabase } from '../lib/supabaseClient';
 import { PlanType } from '../types';
+import { LegalModal, LegalDocType } from './LegalModal';
 
 interface AuthScreenProps {
   role: 'CLIENT' | 'ADMIN';
@@ -21,6 +22,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ role, onLogin, onBack, p
   const [phone, setPhone] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [recoverSent, setRecoverSent] = useState(false);
+
+  // Legal Modal State
+  const [showLegal, setShowLegal] = useState(false);
+  const [legalType, setLegalType] = useState<LegalDocType>('TERMS');
 
   // Auto-fill logic from props (Conversion Flow)
   useEffect(() => {
@@ -97,6 +102,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ role, onLogin, onBack, p
     } finally {
         setLoading(false);
     }
+  };
+
+  const openLegal = (type: LegalDocType) => {
+      setLegalType(type);
+      setShowLegal(true);
   };
 
   return (
@@ -255,12 +265,24 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ role, onLogin, onBack, p
                     </>
                 )}
              </form>
+
+             {/* Footer Legal Links */}
+             <div className="mt-6 pt-4 border-t border-white/5 flex items-center justify-center gap-6 relative z-10">
+                 <button onClick={() => openLegal('TERMS')} className="text-[8px] font-bold text-zinc-600 hover:text-white uppercase tracking-widest transition-colors">Termos de Uso</button>
+                 <button onClick={() => openLegal('PRIVACY')} className="text-[8px] font-bold text-zinc-600 hover:text-white uppercase tracking-widest transition-colors">Políticas & LGPD</button>
+             </div>
           </div>
           
           <button onClick={onBack} className="mt-6 mx-auto text-zinc-600 hover:text-white text-[8px] font-black uppercase tracking-[0.2em] flex items-center gap-2 transition-all opacity-60 hover:opacity-100 group">
             <ArrowLeft size={10} className="group-hover:-translate-x-1 transition-transform" /> Voltar ao Início
           </button>
       </div>
+
+      <LegalModal 
+        isOpen={showLegal} 
+        type={legalType} 
+        onClose={() => setShowLegal(false)} 
+      />
     </div>
   );
 };

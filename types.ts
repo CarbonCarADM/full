@@ -1,5 +1,6 @@
 
 
+
 export enum PlanType {
   START = 'START',
   PRO = 'PRO',
@@ -25,6 +26,13 @@ export enum ServiceType {
 }
 
 export type VehicleType = 'CARRO' | 'SUV' | 'MOTO' | 'UTILITARIO';
+
+export interface ServiceBay {
+  id: string;
+  name: string;
+  business_id: string;
+  is_active: boolean;
+}
 
 export interface ServiceItem {
   id: string;
@@ -104,7 +112,7 @@ export interface Appointment {
   id: string;
   customerId: string;
   vehicleId: string;
-  boxId?: number; 
+  boxId?: string; 
   serviceId?: string;
   serviceType: string;
   date: string;

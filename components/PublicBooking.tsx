@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Check, ChevronLeft, Star, MapPin, Search, Zap, X, User, ArrowRight, Clock, Loader2, CalendarX, History, LayoutGrid, Bell, Phone, Filter, Instagram, Calendar as CalendarIcon, Wrench, Car, LogOut, Key, MessageSquare, Send, Image as ImageIcon, ThumbsUp, Lock, ArrowUpRight } from 'lucide-react';
+import { Check, ChevronLeft, Star, MapPin, Search, Zap, X, User, ArrowRight, Clock, Loader2, CalendarX, History, LayoutGrid, Bell, Phone, Filter, Instagram, Calendar as CalendarIcon, Wrench, Car, LogOut, Key, MessageSquare, Send, Image as ImageIcon, ThumbsUp, Lock, ArrowUpRight, Trophy } from 'lucide-react';
 import { BusinessSettings, ServiceItem, Appointment, PortfolioItem, Review } from '../types';
 import { cn, formatPhone, formatPlate } from '../lib/utils';
 import { supabase } from '../lib/supabaseClient';
@@ -38,8 +38,9 @@ interface Notification {
 
 // Helper: Converte "HH:mm" para minutos totais do dia
 const timeToMinutes = (time: string): number => {
+    if (!time) return 0;
     const [h, m] = time.split(':').map(Number);
-    return h * 60 + m;
+    return (h || 0) * 60 + (m || 0);
 };
 
 // Helper: Converte minutos totais para "HH:mm"
@@ -105,10 +106,37 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
     const [passwordStatus, setPasswordStatus] = useState<'IDLE' | 'SAVING' | 'SUCCESS' | 'ERROR'>('IDLE');
     const [passwordFeedback, setPasswordFeedback] = useState('');
 
+    // Business Status Logic
+    const [isOpenNow, setIsOpenNow] = useState(false);
+
     // Fix for TS2786: Lock cannot be used as a JSX component
     const LockIcon = Lock as any;
 
     // --- EFFECTS ---
+
+    useEffect(() => {
+        // Calculate Business Open Status
+        const checkOpenStatus = () => {
+            const now = new Date();
+            const currentMins = now.getHours() * 60 + now.getMinutes();
+            const day = now.getDay();
+            const rule = businessSettings.operating_days?.find(r => r.dayOfWeek === day);
+
+            if (!rule || !rule.isOpen) {
+                setIsOpenNow(false);
+                return;
+            }
+            
+            const start = timeToMinutes(rule.openTime);
+            const end = timeToMinutes(rule.closeTime);
+            
+            setIsOpenNow(currentMins >= start && currentMins < end);
+        };
+        
+        checkOpenStatus();
+        const interval = setInterval(checkOpenStatus, 60000); // Check every minute
+        return () => clearInterval(interval);
+    }, [businessSettings]);
 
     // Fetch Initial Data
     useEffect(() => {
@@ -239,13 +267,19 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
             }
 
             const slots: string[] = [];
-            const interval = businessSettings.slot_interval_minutes || 60;
+            // Safe interval to prevent infinite loop
+            const interval = (businessSettings.slot_interval_minutes && businessSettings.slot_interval_minutes > 0) ? businessSettings.slot_interval_minutes : 60;
+            
             const startMins = timeToMinutes(rule.openTime); 
             const endMins = timeToMinutes(rule.closeTime);
 
-            for (let currentMins = startMins; currentMins < endMins; currentMins += interval) {
-                slots.push(minutesToTime(currentMins));
+            // Safety Check: if end <= start, assume configuration error and show no slots
+            if (endMins > startMins) {
+                for (let currentMins = startMins; currentMins < endMins; currentMins += interval) {
+                    slots.push(minutesToTime(currentMins));
+                }
             }
+            
             setAvailableSlots(slots);
 
             const { data: busyData } = await supabase
@@ -457,9 +491,20 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                                         </div>
                                         <button onClick={handleOpenWhatsapp} className="w-10 h-10 rounded-full bg-green-900/20 border border-green-500/20 flex items-center justify-center text-green-500 hover:bg-green-500 hover:text-white transition-all"><Phone size={16} /></button>
                                     </div>
-                                    <div className="relative z-20 space-y-1">
+                                    <div className="relative z-20 space-y-2">
+                                        {/* Status Row */}
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <div className={cn("w-2 h-2 rounded-full animate-pulse", isOpenNow ? "bg-green-500" : "bg-red-500")} />
+                                            <span className={cn("text-[9px] font-bold uppercase tracking-widest", isOpenNow ? "text-green-500" : "text-red-500")}>
+                                                {isOpenNow ? "Aberto agora" : "Fechado"}
+                                            </span>
+                                        </div>
+
                                         <div className="flex items-center gap-2 text-zinc-400"><Instagram size={12}/><span className="text-[9px] font-bold uppercase">{businessSettings.configs?.instagram || '@carboncar'}</span></div>
-                                        <div className="flex items-center gap-2 text-zinc-400"><MapPin size={12}/><span className="text-[9px] font-bold uppercase truncate max-w-[200px]">{businessSettings.address || 'Endereço não informado'}</span></div>
+                                        <div className="flex items-start gap-2 text-zinc-400">
+                                            <MapPin size={12} className="shrink-0 mt-0.5"/>
+                                            <span className="text-[9px] font-bold uppercase leading-tight">{businessSettings.address || 'Endereço não informado'}</span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -602,6 +647,31 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                                         </div>
                                         <h3 className="text-lg font-black text-white uppercase tracking-tight">{currentUser.email?.split('@')[0]}</h3>
                                         <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest mb-6">{currentUser.email}</p>
+                                        
+                                        {/* Loyalty Status (Visible if Enabled by Admin) */}
+                                        {businessSettings.loyalty_program_enabled && businessSettings.plan_type !== 'START' && (
+                                            <div className="w-full max-w-xs mb-4">
+                                                <div className="flex justify-between items-center mb-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <Trophy size={14} className="text-yellow-500" />
+                                                        <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Nível Fidelidade</span>
+                                                    </div>
+                                                    <span className="text-xs font-black text-white">{servicesCount % 10} / 10</span>
+                                                </div>
+                                                <div className="h-2 bg-zinc-800 rounded-full overflow-hidden border border-white/5 relative">
+                                                    <div 
+                                                        className="h-full bg-gradient-to-r from-yellow-600 to-yellow-500 shadow-[0_0_10px_rgba(234,179,8,0.5)] transition-all duration-1000" 
+                                                        style={{ width: `${(servicesCount % 10) * 10}%` }}
+                                                    />
+                                                </div>
+                                                {servicesCount > 0 && servicesCount % 10 === 0 && (
+                                                    <div className="mt-3 bg-yellow-900/10 border border-yellow-500/20 p-2 rounded-lg flex items-center gap-2 justify-center animate-pulse">
+                                                        <Star size={12} className="text-yellow-500 fill-yellow-500" />
+                                                        <span className="text-[9px] font-black text-yellow-500 uppercase tracking-widest">Recompensa Disponível!</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="grid grid-cols-2 gap-3">
                                         <div className="bg-[#121212] p-4 rounded-[1.5rem] border border-white/5">

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, Save, User, Store, Boxes, AlertTriangle } from 'lucide-react';
-import { Appointment, AppointmentStatus, Customer, Vehicle, BusinessSettings, ServiceItem } from '../types';
+import { Appointment, AppointmentStatus, Customer, Vehicle, BusinessSettings, ServiceItem, ServiceBay } from '../types';
 import { cn, formatPhone, formatPlate } from '../lib/utils';
 
 interface NewAppointmentModalProps {
@@ -12,10 +12,11 @@ interface NewAppointmentModalProps {
   existingAppointments?: Appointment[];
   settings: BusinessSettings;
   services?: ServiceItem[];
+  serviceBays?: ServiceBay[];
 }
 
 export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({ 
-    isOpen, onClose, onSave, customers, settings, services = []
+    isOpen, onClose, onSave, customers, settings, services = [], serviceBays = []
 }) => {
   const [isNewCustomer, setIsNewCustomer] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -27,7 +28,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     date: new Date().toISOString().split('T')[0],
     time: '09:00',
     durationMinutes: 60,
-    boxId: 1,
+    boxId: '',
     price: 0,
     observation: ''
   });
@@ -43,8 +44,16 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       setIsNewCustomer(false);
       setNewCustomerData({ name: '', phone: '', vehicleBrand: '', vehicleModel: '', vehiclePlate: '' });
       setBlockedError(false);
+      // Select first bay by default if available
+      if (serviceBays.length > 0) {
+          setFormData(prev => ({ ...prev, boxId: serviceBays[0].id }));
+      }
+    } else {
+        if (serviceBays.length > 0 && !formData.boxId) {
+             setFormData(prev => ({ ...prev, boxId: serviceBays[0].id }));
+        }
     }
-  }, [isOpen]);
+  }, [isOpen, serviceBays]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,6 +85,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
     if (!isNewCustomer && !finalCustomerId) return alert("Selecione um cliente da base.");
     if (!selectedService) return alert("Selecione um serviço.");
+    if (!formData.boxId) return alert("Selecione um Box de Atendimento.");
 
     // Validate blocked dates
     if (settings.blocked_dates?.some(bd => bd.date === formData.date)) {
@@ -92,7 +102,6 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       serviceType: selectedService.name,
       date: formData.date,
       time: formData.time,
-      // Fix: changed durationMinutes to duration_minutes
       durationMinutes: selectedService.duration_minutes || 60,
       price: Number(formData.price || selectedService.price),
       status: AppointmentStatus.NOVO,
@@ -188,15 +197,23 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                         <Boxes size={14} className="text-red-600" />
                         <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">Alocação de Recurso</span>
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
-                        {/* Fix: changed boxCapacity to box_capacity */}
-                        {Array.from({ length: settings.box_capacity }, (_, i) => i + 1).map(num => (
-                            <button key={num} type="button" onClick={() => setFormData({...formData, boxId: num})} className={cn(
-                                "py-4 rounded-2xl border text-[10px] font-bold uppercase transition-all",
-                                formData.boxId === num ? "bg-red-600 border-red-600 text-white shadow-glow-red" : "bg-zinc-950 border-white/5 text-zinc-500"
-                            )}>BOX {num}</button>
-                        ))}
-                    </div>
+                    
+                    {/* Bay Selection with UUIDs */}
+                    {serviceBays.length > 0 ? (
+                        <div className="grid grid-cols-3 gap-2">
+                            {serviceBays.map(bay => (
+                                <button key={bay.id} type="button" onClick={() => setFormData({...formData, boxId: bay.id})} className={cn(
+                                    "py-4 rounded-2xl border text-[10px] font-bold uppercase transition-all",
+                                    formData.boxId === bay.id ? "bg-red-600 border-red-600 text-white shadow-glow-red" : "bg-zinc-950 border-white/5 text-zinc-500"
+                                )}>{bay.name}</button>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="p-4 rounded-xl border border-yellow-500/20 bg-yellow-900/10 text-yellow-500 text-xs text-center">
+                            Nenhum Box Configurado. O sistema criará boxes padrão automaticamente.
+                        </div>
+                    )}
+
                     <div className="grid grid-cols-2 gap-4">
                         <input type="date" className="bg-zinc-900 border border-white/10 rounded-xl px-4 py-4 text-sm text-white outline-none" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} />
                         <input type="time" className="bg-zinc-900 border border-white/10 rounded-xl px-4 py-4 text-sm text-white outline-none" value={formData.time} onChange={e => setFormData({...formData, time: e.target.value})} />

@@ -52,7 +52,7 @@ Recomendamos chegar com 15 minutos de antecedência, para conferência rápida e
 
 📅 Data: ${formattedDate}
 ⏰ Horário: ${appointmentTime}
-🚗 Veículo: ${vehicleModel || 'N/A'} (${vehiclePlate || 'S/P'})
+🚗 Veículo: ${vehicleModel || 'Veículo'} (${vehiclePlate || 'S/P'})
 🛠 Serviço: ${serviceName || 'Serviço Geral'}
 
 Qualquer imprevisto, por favor nos avise com antecedência.

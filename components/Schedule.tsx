@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { AppointmentStatus, Appointment, Customer, PlanType, BusinessSettings, ServiceItem } from '../types';
+import { AppointmentStatus, Appointment, Customer, PlanType, BusinessSettings, ServiceItem, ServiceBay } from '../types';
 import { Store, Clock, Calendar, ChevronLeft, ChevronRight, Plus, X, Filter, SlidersHorizontal, CheckCircle2, CircleDashed, Trash2, Phone, RotateCw } from 'lucide-react';
 import { NewAppointmentModal } from './NewAppointmentModal';
 import { ConfirmationModal } from './ConfirmationModal';
@@ -17,7 +17,8 @@ interface ScheduleProps {
   onUpgrade: () => void;
   settings: BusinessSettings;
   services?: ServiceItem[];
-  onRefresh?: () => Promise<void>; // New prop
+  serviceBays?: ServiceBay[];
+  onRefresh?: () => Promise<void>; 
 }
 
 export const Schedule: React.FC<ScheduleProps> = ({ 
@@ -29,6 +30,7 @@ export const Schedule: React.FC<ScheduleProps> = ({
   onDeleteAppointment,
   settings,
   services = [],
+  serviceBays = [],
   onRefresh
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -207,6 +209,7 @@ export const Schedule: React.FC<ScheduleProps> = ({
                 const customer = customers.find(c => c.id === apt.customerId);
                 const vehicle = customer?.vehicles?.find(v => v.id === apt.vehicleId) || customer?.vehicles?.[0];
                 const isRunning = apt.status === AppointmentStatus.EM_EXECUCAO;
+                const bay = serviceBays.find(b => b.id === apt.boxId);
 
                 return (
                     <div key={apt.id} className="relative group animate-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: `${index * 50}ms` }}>
@@ -262,7 +265,9 @@ export const Schedule: React.FC<ScheduleProps> = ({
                                     </div>
 
                                     <div className="flex-1 border-l border-white/5 pl-4 md:pl-6 space-y-1">
-                                        <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Procedimento</p>
+                                        <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                                            {bay ? bay.name : 'Box N/A'} • Procedimento
+                                        </p>
                                         <p className="text-base font-bold text-zinc-200 uppercase leading-tight max-w-md">
                                             {apt.serviceType}
                                         </p>
@@ -362,6 +367,7 @@ export const Schedule: React.FC<ScheduleProps> = ({
         customers={customers}
         settings={settings}
         services={services}
+        serviceBays={serviceBays}
       />
     </div>
   );

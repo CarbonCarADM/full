@@ -1,8 +1,9 @@
+
 import React, { useEffect, useState } from 'react';
 import { supabase } from './lib/supabaseClient';
 import { 
   Customer, Appointment, BusinessSettings, ServiceItem, 
-  Expense, PlanType, PortfolioItem, Review, AppointmentStatus 
+  Expense, PlanType, PortfolioItem, Review, AppointmentStatus, ServiceBay 
 } from './types';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
@@ -17,6 +18,8 @@ import { PublicBooking } from './components/PublicBooking';
 import { SubscriptionGuard } from './components/SubscriptionGuard';
 import { Loader2, Menu } from 'lucide-react';
 import { useEntitySaver } from './hooks/useEntitySaver';
+import { generateConfirmationMessage, openWhatsAppChat } from './services/whatsappService';
+import { CookieConsent } from './components/CookieConsent';
 
 function App() {
   const [session, setSession] = useState<any>(null);
@@ -29,6 +32,7 @@ function App() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [services, setServices] = useState<ServiceItem[]>([]);
+  const [serviceBays, setServiceBays] = useState<ServiceBay[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -69,6 +73,32 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  const normalizeSettings = (biz: any): BusinessSettings => {
+      // Garante que operating_days e blocked_dates existam na raiz, extraindo de configs se necessário
+      let operating_days = biz.operating_days || biz.configs?.operating_days || [];
+      const blocked_dates = biz.blocked_dates || biz.configs?.blocked_dates || [];
+
+      // Fallback: Se não houver horários configurados, usar padrão comercial (Seg-Sex 08-18h)
+      // Isso previne que a agenda apareça "travada" ou vazia para contas novas
+      if (operating_days.length === 0) {
+          operating_days = [
+              { dayOfWeek: 0, isOpen: false, openTime: '00:00', closeTime: '00:00' }, // Dom
+              { dayOfWeek: 1, isOpen: true, openTime: '08:00', closeTime: '18:00' },  // Seg
+              { dayOfWeek: 2, isOpen: true, openTime: '08:00', closeTime: '18:00' },
+              { dayOfWeek: 3, isOpen: true, openTime: '08:00', closeTime: '18:00' },
+              { dayOfWeek: 4, isOpen: true, openTime: '08:00', closeTime: '18:00' },
+              { dayOfWeek: 5, isOpen: true, openTime: '08:00', closeTime: '18:00' },
+              { dayOfWeek: 6, isOpen: true, openTime: '09:00', closeTime: '14:00' }   // Sab
+          ];
+      }
+
+      return {
+          ...biz,
+          operating_days,
+          blocked_dates
+      };
+  };
+
   const fetchData = async () => {
     try {
         setLoading(true);
@@ -77,7 +107,8 @@ function App() {
         if (publicSlug) {
             const { data: biz } = await supabase.from('business_settings').select('*').eq('slug', publicSlug).single();
             if (biz) {
-                setSettings(biz);
+                const normalized = normalizeSettings(biz);
+                setSettings(normalized);
                 businessId = biz.id;
             } else {
                 alert("Hangar não encontrado.");
@@ -89,10 +120,13 @@ function App() {
             // Admin Mode
             const { data: biz } = await supabase.from('business_settings').select('*').eq('user_id', session.user.id).single();
             if (biz) {
-                setSettings(biz);
+                const normalized = normalizeSettings(biz);
+                setSettings(normalized);
                 businessId = biz.id;
             } else {
-                // If no business settings found for user, typically handled by AuthScreen logic or new account
+                // Se não encontrar settings (conta nova sem trigger), cria um padrão em memória para não quebrar UI
+                // Idealmente o AuthScreen já cria, mas por segurança:
+                console.warn("Settings não encontradas para usuário logado.");
             }
         }
 
@@ -105,6 +139,7 @@ function App() {
         const [
             { data: apts },
             { data: servs },
+            { data: bays },
             { data: exps },
             { data: port },
             { data: revs },
@@ -112,6 +147,7 @@ function App() {
         ] = await Promise.all([
             supabase.from('appointments').select('*').eq('business_id', businessId),
             supabase.from('services').select('*').eq('business_id', businessId).eq('is_active', true),
+            supabase.from('service_bays').select('*').eq('business_id', businessId).order('name', { ascending: true }),
             supabase.from('expenses').select('*').eq('business_id', businessId),
             supabase.from('portfolio_items').select('*').eq('business_id', businessId),
             supabase.from('reviews').select('*').eq('business_id', businessId),
@@ -124,10 +160,12 @@ function App() {
                 serviceType: a.service_type,
                 durationMinutes: a.duration_minutes,
                 customerId: a.customer_id,
-                vehicleId: a.vehicle_id
+                vehicleId: a.vehicle_id,
+                boxId: a.box_id
             })));
         }
         if (servs) setServices(servs as ServiceItem[]);
+        if (bays) setServiceBays(bays as ServiceBay[]);
         if (exps) setExpenses(exps as Expense[]);
         if (port) setPortfolio(port.map(p => ({ ...p, imageUrl: p.image_url })));
         if (revs) setReviews(revs.map(r => ({ ...r, customerName: r.customer_name })));
@@ -176,25 +214,72 @@ function App() {
       const { success } = await save('appointments', { id, status });
       if (success) {
           setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
+
+          // -----------------------------------------------------------
+          // WHATSAPP AUTOMATION: Ao Confirmar Agendamento
+          // -----------------------------------------------------------
+          if (status === AppointmentStatus.CONFIRMADO) {
+              const apt = appointments.find(a => a.id === id);
+              if (apt) {
+                  const customer = customers.find(c => c.id === apt.customerId);
+                  if (customer && customer.phone) {
+                      const vehicle = customer.vehicles.find(v => v.id === apt.vehicleId) || customer.vehicles[0];
+                      
+                      // Pequeno timeout para garantir que a UI atualize antes do alert
+                      setTimeout(() => {
+                          if (window.confirm("Agendamento Aceito! Deseja enviar a mensagem de confirmação para o cliente no WhatsApp?")) {
+                              const message = generateConfirmationMessage(
+                                  settings?.business_name || 'CarbonCar',
+                                  customer.name,
+                                  apt.date,
+                                  apt.time,
+                                  vehicle?.model || 'Veículo',
+                                  vehicle?.plate || '---',
+                                  apt.serviceType
+                              );
+                              openWhatsAppChat(customer.phone, message);
+                          }
+                      }, 100);
+                  }
+              }
+          }
+          // -----------------------------------------------------------
       }
   };
 
   const handleAddAppointment = async (apt: Appointment, newCustomer?: Customer) => {
+      // 1. Obter sessão para garantir user_id
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.user) {
+          alert("Erro: Usuário não autenticado.");
+          return;
+      }
+
       // Logic to save customer/vehicle first if new, then appointment
       if (newCustomer) {
-          const { data: custData } = await supabase.from('customers').insert({
+          const { data: custData, error: custError } = await supabase.from('customers').insert({
               business_id: settings?.id,
+              user_id: session.user.id, // Mandatory per schema
               name: newCustomer.name,
               phone: newCustomer.phone,
               email: newCustomer.email
           }).select().single();
           
+          if (custError) {
+              console.error("Erro ao criar cliente:", custError);
+              alert("Erro ao salvar cliente. Verifique os dados.");
+              return;
+          }
+          
           if (custData) {
+              // Assumindo que o modal envia pelo menos 1 veículo no array
+              const vehicleData = newCustomer.vehicles[0];
               const { data: vehData } = await supabase.from('vehicles').insert({
                   customer_id: custData.id,
-                  brand: newCustomer.vehicles[0].brand,
-                  model: newCustomer.vehicles[0].model,
-                  plate: newCustomer.vehicles[0].plate,
+                  brand: vehicleData.brand,
+                  model: vehicleData.model,
+                  plate: vehicleData.plate,
                   type: 'CARRO'
               }).select().single();
 
@@ -206,8 +291,15 @@ function App() {
           }
       }
 
+      if (!apt.boxId || apt.boxId.length < 10) {
+          console.error("Invalid Box ID:", apt.boxId);
+          alert("Erro: Box de atendimento inválido. Atualize a página.");
+          return;
+      }
+
       const payload = {
         business_id: settings?.id,
+        user_id: session.user.id, // Mandatory per schema
         customer_id: apt.customerId,
         vehicle_id: apt.vehicleId,
         service_id: apt.serviceId,
@@ -218,11 +310,15 @@ function App() {
         price: apt.price,
         status: apt.status,
         observation: apt.observation,
-        box_id: apt.boxId
+        box_id: apt.boxId // Must be UUID string
       };
 
-      const { data: aptData } = await supabase.from('appointments').insert(payload).select().single();
-      if (aptData) {
+      const { data: aptData, error } = await supabase.from('appointments').insert(payload).select().single();
+      
+      if (error) {
+          console.error("Erro ao salvar agendamento:", error);
+          alert("Erro ao salvar: " + error.message);
+      } else if (aptData) {
           fetchData();
       }
   };
@@ -278,7 +374,8 @@ function App() {
   if (!settings) return <div className="h-screen bg-black flex items-center justify-center text-white">Carregando Hangar...</div>;
 
   return (
-    <div className="flex h-screen bg-black font-sans selection:bg-red-900 selection:text-white">
+    // CORRIGIDO: height: 111.12vh para compensar zoom:0.9 e preencher a tela, removendo barra preta abaixo do sidebar
+    <div className="flex w-full overflow-hidden bg-black font-sans selection:bg-red-900 selection:text-white" style={{ zoom: '0.9', height: '111.12vh' }}>
         <Sidebar 
             activeTab={activeTab} 
             setActiveTab={setActiveTab} 
@@ -292,7 +389,7 @@ function App() {
             slug={settings.slug}
         />
         
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+        <div className="flex-1 flex flex-col min-w-0 h-full relative">
             <button 
                 onClick={() => setSidebarOpen(true)}
                 className="md:hidden absolute top-4 left-4 z-50 p-2 bg-zinc-900 rounded-lg text-white"
@@ -304,7 +401,7 @@ function App() {
                 businessId={settings.id || ''} 
                 onPlanChange={fetchData}
             >
-                <main className="flex-1 overflow-y-auto bg-black custom-scrollbar">
+                <main className="flex-1 h-full overflow-y-auto bg-black custom-scrollbar pb-10">
                     {activeTab === 'dashboard' && (
                         <Dashboard 
                             currentPlan={settings.plan_type || PlanType.START}
@@ -329,6 +426,7 @@ function App() {
                             onDeleteAppointment={async (id) => { await supabase.from('appointments').delete().eq('id', id); fetchData(); }}
                             settings={settings}
                             services={services}
+                            serviceBays={serviceBays}
                             onUpgrade={() => setActiveTab('settings')}
                             currentPlan={settings.plan_type}
                             onRefresh={fetchData}
@@ -338,10 +436,29 @@ function App() {
                         <CRM 
                             customers={customers}
                             onAddCustomer={async (c) => { 
-                                const { error } = await supabase.from('customers').insert({
+                                const { data: { session } } = await supabase.auth.getSession();
+                                if (!session?.user) return;
+
+                                // Extrair veículos do objeto c (que vem do formulário do CRM)
+                                const { vehicles, ...customerData } = c;
+
+                                const { data: newCust, error } = await supabase.from('customers').insert({
                                     business_id: settings?.id,
-                                    ...c
-                                });
+                                    user_id: session.user.id, // Obrigatório pelo schema
+                                    ...customerData
+                                }).select().single();
+                                
+                                if(!error && newCust && vehicles && vehicles.length > 0) {
+                                    // Inserir veículo
+                                    await supabase.from('vehicles').insert({
+                                        customer_id: newCust.id,
+                                        brand: vehicles[0].brand,
+                                        model: vehicles[0].model,
+                                        plate: vehicles[0].plate,
+                                        type: 'CARRO'
+                                    });
+                                }
+
                                 if(!error) fetchData(); 
                             }}
                             onDeleteCustomer={async (id) => { await supabase.from('customers').delete().eq('id', id); fetchData(); }}
@@ -398,6 +515,7 @@ function App() {
                 </main>
             </SubscriptionGuard>
         </div>
+        <CookieConsent />
     </div>
   );
 }

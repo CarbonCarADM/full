@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { Search, Plus, User, Car, Phone, Mail, Trash2, History, Zap, ShieldCheck, Trophy, Target } from 'lucide-react';
-import { Customer, BusinessSettings } from '../types';
+import { Search, Plus, User, Car, Phone, Mail, Trash2, History, Zap, ShieldCheck, Trophy, Target, Lock, Crown } from 'lucide-react';
+import { Customer, BusinessSettings, PlanType } from '../types';
 import { cn, formatPhone, formatPlate } from '../lib/utils';
 import { ConfirmationModal } from './ConfirmationModal';
 
@@ -38,8 +38,10 @@ export const CRM: React.FC<CRMProps> = ({ customers, onAddCustomer, onDeleteCust
     c.vehicles.some(v => (v.plate || '').toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
+  const isPlanRestricted = businessSettings.plan_type === PlanType.START;
+
   const toggleLoyalty = () => {
-    // Fix: changed loyaltyProgramEnabled to loyalty_program_enabled
+    if (isPlanRestricted) return; 
     onUpdateSettings({ ...businessSettings, loyalty_program_enabled: !businessSettings.loyalty_program_enabled });
   };
 
@@ -77,8 +79,8 @@ export const CRM: React.FC<CRMProps> = ({ customers, onAddCustomer, onDeleteCust
          variant={confirmModal.variant}
       />
 
-      {/* HEADER */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 md:gap-8 border-b border-white/5 pb-6">
+      {/* HEADER & LOYALTY WIDGET */}
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end gap-6 border-b border-white/5 pb-6">
         <div>
           <h2 className="text-2xl md:text-3xl font-black text-white uppercase tracking-tighter mb-2 flex items-center gap-3">
             <User className="text-red-600" size={24} /> 
@@ -88,26 +90,65 @@ export const CRM: React.FC<CRMProps> = ({ customers, onAddCustomer, onDeleteCust
             Gestão de Carteira e Fidelização
           </p>
         </div>
-        
-        <div className="flex items-center gap-4 w-full md:w-auto">
-          {/* LOYALTY TOGGLE */}
-          <button 
-            onClick={toggleLoyalty}
-            className={cn(
-              "hidden md:flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all mr-2",
-              // Fix: changed loyaltyProgramEnabled to loyalty_program_enabled
-              businessSettings.loyalty_program_enabled ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-500" : "bg-zinc-900 border-white/5 text-zinc-600"
-            )}
-          >
-             <Trophy size={14} />
-             <div className="text-left">
-                <span className="block text-[8px] font-black uppercase tracking-widest opacity-70">Modo Fidelidade</span>
-                {/* Fix: changed loyaltyProgramEnabled to loyalty_program_enabled */}
-                <span className="block text-[9px] font-bold uppercase">{businessSettings.loyalty_program_enabled ? "Ativado" : "Desativado"}</span>
-             </div>
-          </button>
 
-          <div className="relative flex-1 md:w-80">
+        {/* LOYALTY PROGRAM CARD */}
+        <div className={cn(
+            "flex items-center gap-4 p-4 rounded-2xl border transition-all w-full md:w-auto relative overflow-hidden",
+            isPlanRestricted 
+                ? "bg-zinc-900/50 border-white/5 opacity-80" 
+                : businessSettings.loyalty_program_enabled
+                    ? "bg-gradient-to-r from-yellow-900/20 to-black border-yellow-500/30"
+                    : "bg-zinc-900 border-white/10"
+        )}>
+             {/* Icon Box */}
+             <div className={cn(
+                 "w-12 h-12 rounded-xl flex items-center justify-center border shadow-lg shrink-0",
+                 isPlanRestricted ? "bg-zinc-800 border-white/5 text-zinc-600" :
+                 businessSettings.loyalty_program_enabled ? "bg-yellow-500 text-black border-yellow-400" : "bg-zinc-800 border-white/10 text-zinc-500"
+             )}>
+                 {isPlanRestricted ? <Lock size={20} /> : <Trophy size={20} fill={businessSettings.loyalty_program_enabled ? "currentColor" : "none"} />}
+             </div>
+
+             {/* Text Content */}
+             <div className="flex flex-col mr-4">
+                 <span className={cn("text-xs font-black uppercase tracking-tight", isPlanRestricted ? "text-zinc-500" : "text-white")}>
+                     Programa Fidelidade
+                 </span>
+                 <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-wide">
+                     {isPlanRestricted 
+                        ? "Disponível nos planos PRO e ELITE" 
+                        : "1 Lavagem grátis a cada 10 serviços"}
+                 </span>
+             </div>
+
+             {/* Toggle Action */}
+             <div className="ml-auto pl-4 border-l border-white/5">
+                 {isPlanRestricted ? (
+                     <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-950 border border-white/5">
+                         <Crown size={12} className="text-yellow-500" />
+                         <span className="text-[9px] font-black text-zinc-500 uppercase">PRO</span>
+                     </div>
+                 ) : (
+                     <button 
+                        onClick={toggleLoyalty}
+                        className={cn(
+                            "relative w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none",
+                            businessSettings.loyalty_program_enabled ? "bg-yellow-500" : "bg-zinc-700"
+                        )}
+                     >
+                        <div className={cn(
+                            "absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-md transition-transform duration-300",
+                            businessSettings.loyalty_program_enabled ? "translate-x-6" : "translate-x-0"
+                        )} />
+                     </button>
+                 )}
+             </div>
+        </div>
+      </div>
+      
+      {/* SEARCH & ADD ACTION */}
+      <div className="flex flex-col md:flex-row gap-4 justify-end">
+          <div className="relative flex-1 md:max-w-md">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 w-4 h-4" />
             <input 
               type="text" 
@@ -119,19 +160,19 @@ export const CRM: React.FC<CRMProps> = ({ customers, onAddCustomer, onDeleteCust
           </div>
           <button 
             onClick={() => setIsModalOpen(true)}
-            className="bg-white text-black px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-zinc-200 transition-all shadow-glow active:scale-95"
+            className="bg-white text-black px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-zinc-200 transition-all shadow-glow active:scale-95 flex items-center justify-center gap-2"
           >
-            <Plus size={16} />
+            <Plus size={16} /> Novo Cliente
           </button>
-        </div>
       </div>
 
       {/* GRID LIST COMPACT */}
       <div className="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-5">
         {filteredCustomers.map(c => {
             const washes = c.washes || 0;
-            const progress = Math.min(100, (washes / 10) * 100);
+            const progress = Math.min(100, (washes % 10) * 10); // Cíclico
             const isVIP = washes >= 10;
+            const isRewardAvailable = washes > 0 && washes % 10 === 0;
 
             return (
                 <div key={c.id} className="group relative bg-[#09090b] rounded-[1.5rem] border border-white/5 hover:border-white/10 p-5 transition-all duration-300 overflow-hidden">
@@ -145,6 +186,7 @@ export const CRM: React.FC<CRMProps> = ({ customers, onAddCustomer, onDeleteCust
                             <div className="flex items-center gap-3">
                                 <div className={cn(
                                     "w-10 h-10 rounded-xl flex items-center justify-center text-lg font-black border shadow-lg",
+                                    isRewardAvailable ? "bg-yellow-500 text-black border-yellow-400 animate-pulse" :
                                     isVIP ? "bg-yellow-950/20 border-yellow-500/30 text-yellow-500" : "bg-zinc-900 border-white/5 text-zinc-500"
                                 )}>
                                     {c.name.charAt(0)}
@@ -199,18 +241,24 @@ export const CRM: React.FC<CRMProps> = ({ customers, onAddCustomer, onDeleteCust
                             </div>
                         </div>
 
-                        {/* Loyalty Bar */}
-                        {/* Fix: changed loyaltyProgramEnabled to loyalty_program_enabled */}
-                        {businessSettings.loyalty_program_enabled && (
+                        {/* Loyalty Bar (Only if Active and Not Start Plan) */}
+                        {businessSettings.loyalty_program_enabled && !isPlanRestricted && (
                             <div className="mt-auto pt-2 border-t border-white/5">
                                 <div className="flex justify-between items-end mb-1.5">
-                                    <span className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-1"><Zap size={9} className={isVIP ? "text-yellow-500" : "text-zinc-600"}/> Fidelidade</span>
-                                    <span className="text-[9px] font-bold text-white tabular-nums">{washes}/10</span>
+                                    <span className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-1">
+                                        <Zap size={9} className={isRewardAvailable ? "text-yellow-500" : "text-zinc-600"}/> Fidelidade
+                                    </span>
+                                    <span className={cn(
+                                        "text-[9px] font-bold tabular-nums",
+                                        isRewardAvailable ? "text-yellow-500" : "text-white"
+                                    )}>
+                                        {isRewardAvailable ? "RECOMPENSA!" : `${washes % 10}/10`}
+                                    </span>
                                 </div>
-                                <div className="h-1 w-full bg-zinc-900 rounded-full overflow-hidden">
+                                <div className="h-1.5 w-full bg-zinc-900 rounded-full overflow-hidden border border-white/5">
                                     <div 
-                                        className={cn("h-full transition-all duration-1000", isVIP ? "bg-yellow-500 shadow-[0_0_10px_#eab308]" : "bg-red-600")} 
-                                        style={{ width: `${progress}%` }} 
+                                        className={cn("h-full transition-all duration-1000", isRewardAvailable ? "bg-yellow-500 shadow-[0_0_10px_#eab308]" : "bg-red-600")} 
+                                        style={{ width: isRewardAvailable ? '100%' : `${progress}%` }} 
                                     />
                                 </div>
                             </div>

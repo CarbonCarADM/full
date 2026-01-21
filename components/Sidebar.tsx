@@ -72,7 +72,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           fixed inset-y-0 left-0 z-50 w-72 bg-[#09090b]/95 backdrop-blur-xl border-r border-white/5 flex flex-col 
           transform transition-transform duration-500 ease-out
           ${isOpen ? 'translate-x-0' : '-translate-x-full'} 
-          md:translate-x-0 md:static shadow-2xl md:shadow-none
+          md:translate-x-0 md:static md:h-full shadow-2xl md:shadow-none
         `}>
           <div className="p-8 pb-4">
             <div className="mb-10 px-0 h-57 flex items-center justify-start">

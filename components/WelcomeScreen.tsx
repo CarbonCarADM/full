@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Lock, ChevronRight, ScanLine, ArrowRight, LogIn, UserPlus, ChevronLeft } from 'lucide-react';
+import { Lock, ChevronRight, ScanLine, ArrowRight, LogIn, UserPlus, ChevronLeft, Search } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface WelcomeScreenProps {
@@ -10,12 +10,21 @@ interface WelcomeScreenProps {
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onSelectFlow }) => {
   const [booting, setBooting] = useState(true);
   const [view, setView] = useState<'INITIAL' | 'CLIENT_OPTIONS'>('INITIAL');
+  const [showSlugInput, setShowSlugInput] = useState(false);
+  const [slug, setSlug] = useState('');
 
   useEffect(() => {
     // Simula um carregamento rápido do sistema
     const timer = setTimeout(() => setBooting(false), 800);
     return () => clearTimeout(timer);
   }, []);
+
+  const handleSlugAccess = (e: React.FormEvent) => {
+      e.preventDefault();
+      if(slug.trim()) {
+          window.location.href = `?studio=${slug.trim()}`;
+      }
+  };
 
   return (
     <div className="min-h-screen bg-[#000000] flex flex-col font-sans relative overflow-hidden selection:bg-red-900 selection:text-white">
@@ -38,22 +47,52 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onSelectFlow }) =>
       <div className="absolute top-[-10%] right-[-10%] w-[40vw] h-[40vw] bg-zinc-900/10 blur-[150px] rounded-full pointer-events-none z-10" />
 
       {/* --- HUD HEADER --- */}
-      <header className="relative z-30 w-full p-8 md:p-10 flex justify-between items-start animate-in slide-in-from-top-10 duration-1000 fade-in">
-          <div className="flex flex-col gap-1">
-               <div className="flex items-center gap-3">
-                   <div className="w-1.5 h-1.5 bg-red-600 rounded-full animate-pulse shadow-[0_0_15px_rgba(220,38,38,0.8)]" />
-                   <span className="text-xs font-bold text-zinc-400 tracking-[0.2em] uppercase">Carbon OS</span>
+      <header className="relative z-30 w-full p-8 md:p-10 flex justify-between items-center animate-in slide-in-from-top-10 duration-1000 fade-in">
+          <div className="flex items-center gap-4">
+               <img 
+                   src="https://i.postimg.cc/wxRyvSbG/carboncarlogo.png" 
+                   alt="CarbonCar"
+                   className="h-7 w-auto object-contain opacity-90"
+               />
+               <div className="h-6 w-px bg-white/10 hidden md:block" />
+               <div className="flex flex-col justify-center">
+                   <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase leading-tight">Carbon OS</span>
+                   <span className="text-[8px] font-black text-zinc-600 uppercase tracking-widest leading-tight">V1.0 Stable • Secure</span>
                </div>
-               <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest pl-4">V1.0 Stable • Secure</span>
           </div>
 
-          <button 
-            onClick={() => onSelectFlow('ADMIN', 'LOGIN')}
-            className="group flex items-center gap-3 px-5 py-2 rounded-full border border-white/5 bg-white/[0.02] hover:bg-white/[0.08] hover:border-white/10 transition-all duration-500 backdrop-blur-md"
-          >
-            <span className="hidden md:block text-[9px] font-bold text-zinc-500 group-hover:text-zinc-300 uppercase tracking-widest transition-colors">Staff Access</span>
-            <Lock size={12} className="text-zinc-600 group-hover:text-white transition-colors" />
-          </button>
+          <div className="flex items-center gap-2">
+              {showSlugInput ? (
+                  <form onSubmit={handleSlugAccess} className="flex items-center bg-white/[0.05] border border-white/10 rounded-full px-2 py-1 backdrop-blur-md animate-in slide-in-from-right-4">
+                      <input 
+                        autoFocus
+                        value={slug}
+                        onChange={e => setSlug(e.target.value)}
+                        placeholder="Slug do Hangar"
+                        className="bg-transparent border-none outline-none text-[9px] font-bold text-white uppercase w-32 px-2 placeholder:text-zinc-600"
+                      />
+                      <button type="submit" className="w-6 h-6 rounded-full bg-red-600 flex items-center justify-center hover:bg-red-500 transition-colors">
+                          <ChevronRight size={12} className="text-white"/>
+                      </button>
+                  </form>
+              ) : (
+                  <button 
+                    onClick={() => setShowSlugInput(true)}
+                    className="group flex items-center gap-2 px-4 py-2 rounded-full border border-transparent hover:border-white/10 hover:bg-white/[0.05] transition-all"
+                  >
+                      <Search size={12} className="text-zinc-600 group-hover:text-white transition-colors" />
+                      <span className="text-[9px] font-bold text-zinc-600 group-hover:text-zinc-300 uppercase tracking-widest hidden md:block">Buscar Hangar</span>
+                  </button>
+              )}
+
+              <button 
+                onClick={() => onSelectFlow('ADMIN', 'LOGIN')}
+                className="group flex items-center gap-3 px-5 py-2 rounded-full border border-white/5 bg-white/[0.02] hover:bg-white/[0.08] hover:border-white/10 transition-all duration-500 backdrop-blur-md"
+              >
+                <span className="hidden md:block text-[9px] font-bold text-zinc-500 group-hover:text-zinc-300 uppercase tracking-widest transition-colors">Staff Access</span>
+                <Lock size={12} className="text-zinc-600 group-hover:text-white transition-colors" />
+              </button>
+          </div>
       </header>
 
       {/* --- MAIN CONTENT --- */}
@@ -70,15 +109,6 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onSelectFlow }) =>
                 <p className="text-red-500 font-bold text-[10px] md:text-xs tracking-[0.4em] uppercase">
                     Automotive Intelligence
                 </p>
-            </div>
-
-            {/* FEATURED IMAGE ABOVE TITLE */}
-            <div className="relative w-full max-w-[500px] h-56 mb-2">
-                <img 
-                    src="https://i.postimg.cc/15kFTwcc/carboncarlogo.png" 
-                    alt="Automotive Detail" 
-                    className="w-full h-full object-contain"
-                />
             </div>
 
             {/* HERO TITLE - UPDATED TEXT & SCALED DOWN */}
