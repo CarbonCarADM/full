@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Check, ChevronLeft, Star, MapPin, Search, Zap, X, User, ArrowRight, Clock, Loader2, CalendarX, History, LayoutGrid, Bell, Phone, Filter, Instagram, Calendar as CalendarIcon, Wrench, Car, LogOut, Key, MessageSquare, Send, Image as ImageIcon, ThumbsUp, Lock } from 'lucide-react';
+import { Check, ChevronLeft, Star, MapPin, Search, Zap, X, User, ArrowRight, Clock, Loader2, CalendarX, History, LayoutGrid, Bell, Phone, Filter, Instagram, Calendar as CalendarIcon, Wrench, Car, LogOut, Key, MessageSquare, Send, Image as ImageIcon, ThumbsUp, Lock, ArrowUpRight } from 'lucide-react';
 import { BusinessSettings, ServiceItem, Appointment, PortfolioItem, Review } from '../types';
 import { cn, formatPhone, formatPlate } from '../lib/utils';
 import { supabase } from '../lib/supabaseClient';
@@ -16,6 +16,7 @@ interface PublicBookingProps {
     onBookingComplete: (apt: Appointment, newCustomer?: any) => Promise<boolean>;
     onExit: () => void;
     onLoginRequest?: () => void;
+    onRegisterRequest?: (data: { name: string, phone: string }) => void;
 }
 
 interface CalendarDay {
@@ -60,7 +61,7 @@ const formatDuration = (minutes: number): string => {
 export const PublicBooking: React.FC<PublicBookingProps> = ({ 
     currentUser, businessSettings, services, portfolio, 
     existingAppointments = [],
-    onBookingComplete, onExit, onLoginRequest
+    onBookingComplete, onExit, onLoginRequest, onRegisterRequest
 }) => {
     // --- STATE ---
     const [currentScreen, setCurrentScreen] = useState<'HOME' | 'BOOKING' | 'PROFILE' | 'GALLERY' | 'AGENDA'>('HOME');
@@ -124,12 +125,17 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
 
             // User History & Profile Data
             if (currentUser) {
-                const { data: customer } = await supabase
+                // Tenta buscar por email OU user_id se disponível
+                let query = supabase
                     .from('customers')
                     .select('id, name, phone, vehicles(*)')
-                    .eq('business_id', businessSettings.id)
-                    .eq('email', currentUser.email)
-                    .maybeSingle();
+                    .eq('business_id', businessSettings.id);
+                
+                // Prioriza User ID se vinculado
+                query = query.or(`email.eq.${currentUser.email},user_id.eq.${currentUser.id}`);
+
+                const { data: customers } = await query;
+                const customer = customers && customers.length > 0 ? customers[0] : null;
 
                 if (customer) {
                     // Pre-fill user data
@@ -678,17 +684,37 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                                 </div>
                             )}
 
-                            {/* Step 4: Success */}
+                            {/* Step 4: Success (POST-CONVERSION FLOW) */}
                             {step === 4 && (
-                                <div className="flex flex-col items-center justify-center py-10 animate-in zoom-in-95 text-center">
-                                    <div className="w-20 h-20 bg-green-500/10 border border-green-500/20 rounded-full flex items-center justify-center mb-6">
+                                <div className="flex flex-col items-center justify-center py-10 animate-in zoom-in-95 text-center px-4">
+                                    <div className="w-20 h-20 bg-green-500/10 border border-green-500/20 rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(34,197,94,0.2)]">
                                         <Check size={32} className="text-green-500" />
                                     </div>
-                                    <h2 className="text-xl font-black text-white uppercase mb-2">Agendado!</h2>
-                                    <p className="text-zinc-500 text-xs font-medium max-w-xs mx-auto leading-relaxed mb-8">
-                                        Seu serviço foi confirmado para {new Date(selectedDate+'T12:00:00').toLocaleDateString()} às {selectedTime}.
+                                    <h2 className="text-2xl font-black text-white uppercase mb-2 tracking-tight">Agendamento Confirmado! 🚀</h2>
+                                    <p className="text-zinc-400 text-xs font-medium max-w-xs mx-auto leading-relaxed mb-8">
+                                        Seu serviço foi agendado para <span className="text-white font-bold">{new Date(selectedDate+'T12:00:00').toLocaleDateString()}</span> às <span className="text-white font-bold">{selectedTime}</span>.
                                     </p>
-                                    <button onClick={() => { setCurrentScreen('HOME'); setStep(1); }} className="w-full py-4 bg-white text-black rounded-xl font-black uppercase tracking-widest text-[10px]">Voltar para o Início</button>
+
+                                    {/* CONVERSION CARD */}
+                                    {!currentUser && (
+                                        <div className="bg-zinc-900/50 border border-white/10 rounded-2xl p-6 w-full max-w-sm mb-6 relative overflow-hidden group">
+                                            <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-red-600 to-red-500" />
+                                            <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest mb-3">Acompanhamento em Tempo Real</p>
+                                            <p className="text-xs text-white mb-6 leading-relaxed">
+                                                Crie sua senha agora para acompanhar o status do serviço e ver o histórico completo.
+                                            </p>
+                                            <button 
+                                                onClick={() => onRegisterRequest && onRegisterRequest({ name: guestForm.name, phone: guestForm.phone })}
+                                                className="w-full py-4 bg-white text-black rounded-xl font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 hover:bg-zinc-200 transition-all shadow-glow"
+                                            >
+                                                Criar Conta e Acompanhar <ArrowUpRight size={14} />
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    <button onClick={() => { setCurrentScreen('HOME'); setStep(1); }} className="text-zinc-600 hover:text-white text-[10px] font-bold uppercase tracking-widest py-3 px-6 rounded-xl hover:bg-white/5 transition-all">
+                                        Voltar ao Início
+                                    </button>
                                 </div>
                             )}
 

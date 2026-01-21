@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LogIn, UserPlus, ArrowLeft, RefreshCw, Fingerprint, Mail, Phone, User, Key, ShieldCheck, HelpCircle, CheckCircle2, ArrowRight } from 'lucide-react';
 import { cn, formatPhone } from '../lib/utils';
 import { supabase } from '../lib/supabaseClient';
@@ -9,9 +9,10 @@ interface AuthScreenProps {
   role: 'CLIENT' | 'ADMIN';
   onLogin: (user: any) => void;
   onBack: () => void;
+  preFillData?: { name: string, phone: string } | null;
 }
 
-export const AuthScreen: React.FC<AuthScreenProps> = ({ role, onLogin, onBack }) => {
+export const AuthScreen: React.FC<AuthScreenProps> = ({ role, onLogin, onBack, preFillData }) => {
   const [authMode, setAuthMode] = useState<'LOGIN' | 'REGISTER' | 'RECOVER'>('LOGIN');
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
@@ -20,6 +21,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ role, onLogin, onBack })
   const [phone, setPhone] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [recoverSent, setRecoverSent] = useState(false);
+
+  // Auto-fill logic from props (Conversion Flow)
+  useEffect(() => {
+      if (preFillData) {
+          setFullName(preFillData.name);
+          setPhone(preFillData.phone);
+          setAuthMode('REGISTER');
+      }
+  }, [preFillData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,6 +51,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ role, onLogin, onBack })
                 email,
                 password,
                 options: {
+                    // CRITICAL: Phone must be sent here for DB Trigger linkage
                     data: { full_name: fullName, phone, role }
                 }
             });

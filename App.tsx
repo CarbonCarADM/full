@@ -15,6 +15,7 @@ import { PlanType, Customer, Appointment, AppointmentStatus, Expense, ServiceIte
 import { Loader2, CheckCircle2, AlertCircle, Menu, LogOut, Store } from 'lucide-react';
 import { cn } from './lib/utils';
 import { supabase } from './lib/supabaseClient';
+import { generateConfirmationMessage, openWhatsAppChat } from './services/whatsappService';
 
 // Helpers para manipulação segura do histórico (evita crash em blob urls)
 const isRestrictedEnv = () => {
@@ -43,6 +44,9 @@ const App: React.FC = () => {
   const [longLoading, setLongLoading] = useState(false); // Estado para mostrar botão de emergência
   const [notFound, setNotFound] = useState(false); // Estado para Hangar não encontrado
   
+  // Estado para transferir dados do Agendamento Público para o Cadastro
+  const [preFillAuthData, setPreFillAuthData] = useState<{name: string, phone: string} | null>(null);
+
   const initialSlug = new URLSearchParams(window.location.search).get('studio');
   const [viewState, setViewState] = useState<'WELCOME' | 'AUTH' | 'DASHBOARD' | 'PUBLIC_BOOKING'>(
     initialSlug ? 'PUBLIC_BOOKING' : 'WELCOME'
@@ -318,6 +322,7 @@ const App: React.FC = () => {
   const handleAuthSuccess = async (user: any) => {
       setCurrentUser(user);
       setLoadingSession(true);
+      setPreFillAuthData(null); // Limpa dados temporários após sucesso
       await loadData(user.id);
   };
 
@@ -342,6 +347,16 @@ const App: React.FC = () => {
           showToast(e.message || "Erro ao salvar plano.", 'error');
       } finally {
           setLoadingSession(false);
+      }
+  };
+
+  // --- Feature: Manual Refresh ---
+  const handleRefresh = async () => {
+      if (currentUser) {
+          setLoadingSession(true);
+          await loadData(currentUser.id);
+          // setLoadingSession é tratado dentro de loadData, mas para garantir:
+          // setTimeout(() => setLoadingSession(false), 500); 
       }
   };
 
@@ -453,9 +468,42 @@ const App: React.FC = () => {
   const handleUpdateStatus = async (id: string, status: AppointmentStatus) => {
     const { error } = await supabase.from('appointments').update({ status }).eq('id', id);
     if (!error) {
+        // Atualização local para feedback instantâneo
         setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
+        
+        // Mensagens de Toast
         if (status === AppointmentStatus.FINALIZADO) {
             showToast("Serviço finalizado! Receita contabilizada.");
+        } else if (status === AppointmentStatus.CONFIRMADO) {
+            showToast("Agendamento confirmado!");
+            
+            // --- FLUXO INTELIGENTE: WHATSAPP AUTOMÁTICO ---
+            // Localiza o agendamento atual e o cliente para gerar a mensagem
+            const currentApt = appointments.find(a => a.id === id);
+            const currentCustomer = customers.find(c => c.id === currentApt?.customerId);
+            const currentVehicle = currentCustomer?.vehicles.find(v => v.id === currentApt?.vehicleId);
+
+            if (currentApt && currentCustomer) {
+                // Pequeno delay para garantir que o toast apareça antes do confirm
+                setTimeout(() => {
+                    const shouldSendWhatsapp = window.confirm(
+                        "Agendamento Aceito! Deseja enviar a mensagem de confirmação para o cliente no WhatsApp?"
+                    );
+
+                    if (shouldSendWhatsapp) {
+                        const message = generateConfirmationMessage(
+                            businessSettings.business_name,
+                            currentCustomer.name,
+                            currentApt.date,
+                            currentApt.time,
+                            currentVehicle?.model || '',
+                            currentVehicle?.plate || '',
+                            currentApt.serviceType
+                        );
+                        openWhatsAppChat(currentCustomer.phone, message);
+                    }
+                }, 100);
+            }
         }
     }
   };
@@ -536,7 +584,12 @@ const App: React.FC = () => {
   }
 
   if (viewState === 'AUTH') {
-    return <AuthScreen role={authRole} onLogin={handleAuthSuccess} onBack={() => setViewState('WELCOME')} />;
+    return <AuthScreen 
+        role={authRole} 
+        onLogin={handleAuthSuccess} 
+        onBack={() => setViewState('WELCOME')} 
+        preFillData={preFillAuthData}
+    />;
   }
 
   if (viewState === 'PUBLIC_BOOKING') {
@@ -581,6 +634,10 @@ const App: React.FC = () => {
                 else setViewState('WELCOME'); // Se visitante, volta para welcome
             }}
             onLoginRequest={() => handleAuthFlow('CLIENT', 'LOGIN')}
+            onRegisterRequest={(data) => {
+                setPreFillAuthData(data);
+                handleAuthFlow('CLIENT', 'REGISTER');
+            }}
         />
     );
   }
@@ -645,6 +702,7 @@ const App: React.FC = () => {
                 onUpdateStatus={handleUpdateStatus}
                 onCancelAppointment={handleCancelAppointment}
                 onDeleteAppointment={handleDeleteAppointment}
+                onRefresh={handleRefresh}
               />
             )}
             
@@ -660,6 +718,7 @@ const App: React.FC = () => {
                 onUpgrade={() => setActiveTab('settings')}
                 settings={businessSettings}
                 services={services}
+                onRefresh={handleRefresh}
               />
             )}
             

@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { AppointmentStatus, Appointment, Customer, PlanType, BusinessSettings, ServiceItem } from '../types';
-import { Store, Clock, Calendar, ChevronLeft, ChevronRight, Plus, X, Filter, SlidersHorizontal, CheckCircle2, CircleDashed, Trash2, Phone } from 'lucide-react';
+import { Store, Clock, Calendar, ChevronLeft, ChevronRight, Plus, X, Filter, SlidersHorizontal, CheckCircle2, CircleDashed, Trash2, Phone, RotateCw } from 'lucide-react';
 import { NewAppointmentModal } from './NewAppointmentModal';
 import { ConfirmationModal } from './ConfirmationModal';
 import { cn } from '../lib/utils';
@@ -17,6 +17,7 @@ interface ScheduleProps {
   onUpgrade: () => void;
   settings: BusinessSettings;
   services?: ServiceItem[];
+  onRefresh?: () => Promise<void>; // New prop
 }
 
 export const Schedule: React.FC<ScheduleProps> = ({ 
@@ -27,9 +28,11 @@ export const Schedule: React.FC<ScheduleProps> = ({
   onCancelAppointment,
   onDeleteAppointment,
   settings,
-  services = []
+  services = [],
+  onRefresh
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
   // Correção de Data Local para a agenda
   const [selectedDate, setSelectedDate] = useState(() => new Date().toLocaleDateString('en-CA'));
@@ -94,6 +97,14 @@ export const Schedule: React.FC<ScheduleProps> = ({
       });
   };
 
+  const handleManualRefresh = async () => {
+      if (onRefresh) {
+          setIsRefreshing(true);
+          await onRefresh();
+          setTimeout(() => setIsRefreshing(false), 500);
+      }
+  };
+
   return (
     <div className="p-4 md:p-8 pb-32 animate-fade-in space-y-6 md:space-y-8 max-w-[1800px] mx-auto">
       
@@ -122,6 +133,16 @@ export const Schedule: React.FC<ScheduleProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+            {onRefresh && (
+                <button 
+                    onClick={handleManualRefresh}
+                    className="p-3 rounded-2xl border border-white/10 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-all group"
+                    title="Atualizar Dados"
+                >
+                    <RotateCw size={16} className={cn("transition-all", isRefreshing ? "animate-spin text-white" : "group-hover:rotate-180")} />
+                </button>
+            )}
+
             <div className="flex p-1 bg-[#09090b] border border-white/5 rounded-2xl">
                 <button 
                     onClick={() => setViewMode('AGENDA')}
@@ -226,7 +247,7 @@ export const Schedule: React.FC<ScheduleProps> = ({
                                                     {vehicle?.model || 'Modelo N/A'}
                                                 </h3>
                                                 <span className="text-[8px] font-black text-black bg-zinc-200 px-2 py-0.5 rounded uppercase tracking-widest">
-                                                    {vehicle?.plate || '---'}
+                                                    {vehicle?.plate || 'S/P'}
                                                 </span>
                                             </div>
                                             <p className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-2 mb-0.5">
@@ -296,7 +317,16 @@ export const Schedule: React.FC<ScheduleProps> = ({
                                                         </button>
                                                     )}
                                                     
-                                                    {apt.status !== AppointmentStatus.EM_EXECUCAO && (
+                                                    {apt.status === AppointmentStatus.NOVO && (
+                                                        <button 
+                                                            onClick={() => onUpdateStatus(apt.id, AppointmentStatus.CONFIRMADO)}
+                                                            className="px-3 py-1.5 bg-zinc-800 text-white text-[9px] font-black uppercase rounded-lg hover:bg-zinc-700 transition-colors"
+                                                        >
+                                                            Confirmar
+                                                        </button>
+                                                    )}
+
+                                                    {apt.status === AppointmentStatus.CONFIRMADO && (
                                                         <button 
                                                             onClick={() => onUpdateStatus(apt.id, AppointmentStatus.EM_EXECUCAO)}
                                                             className="px-3 py-1.5 bg-white text-black text-[9px] font-black uppercase rounded-lg hover:bg-zinc-200 transition-colors"

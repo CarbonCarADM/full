@@ -3,7 +3,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { 
   DollarSign, Activity, CalendarCheck, Boxes, Play, Check, 
   User as UserIcon, Monitor, ChevronRight, BarChart, 
-  Clock, Sparkles, Car, X, Shield, Lock, Zap, MessageSquare, AlertTriangle, Fingerprint, Trash2, Calendar
+  Clock, Sparkles, Car, X, Shield, Lock, Zap, MessageSquare, AlertTriangle, Fingerprint, Trash2, Calendar, RotateCw
 } from 'lucide-react';
 import { PlanType, Appointment, AppointmentStatus, BusinessSettings, Customer } from '../types';
 import { openWhatsAppChat } from '../services/whatsappService';
@@ -22,13 +22,15 @@ interface DashboardProps {
   onUpdateStatus: (id: string, status: AppointmentStatus) => void;
   onCancelAppointment: (id: string) => void;
   onDeleteAppointment?: (id: string) => void;
+  onRefresh?: () => Promise<void>; // New prop
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ 
     currentPlan, appointments, customers, onUpgrade, setActiveTab, 
-    businessSettings, onUpdateStatus, onCancelAppointment, onDeleteAppointment
+    businessSettings, onUpdateStatus, onCancelAppointment, onDeleteAppointment, onRefresh
 }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -99,6 +101,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
       });
   };
 
+  const handleManualRefresh = async () => {
+      if (onRefresh) {
+          setIsRefreshing(true);
+          await onRefresh();
+          setTimeout(() => setIsRefreshing(false), 500); // Visual delay for better UX
+      }
+  };
+
   return (
       <div className="relative p-4 md:p-8 pb-32 min-h-full animate-fade-in max-w-[1920px] mx-auto overflow-hidden">
           
@@ -144,7 +154,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       </span>
                   </div>
                   
-                  <TrialTimer settings={businessSettings} currentPlan={currentPlan} onUpgrade={onUpgrade} />
+                  <div className="flex gap-2">
+                      {onRefresh && (
+                          <button 
+                              onClick={handleManualRefresh}
+                              className="p-3 rounded-full border border-white/10 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-all group"
+                              title="Atualizar Dados"
+                          >
+                              <RotateCw size={16} className={cn("transition-all", isRefreshing ? "animate-spin text-white" : "group-hover:rotate-180")} />
+                          </button>
+                      )}
+                      <TrialTimer settings={businessSettings} currentPlan={currentPlan} onUpgrade={onUpgrade} />
+                  </div>
               </div>
           </div>
 
