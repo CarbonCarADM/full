@@ -104,6 +104,13 @@ function App() {
         setLoading(true);
         let businessId = '';
 
+        // Lógica de Prioridade: 
+        // 1. Slug na URL (Visitante)
+        // 2. Role CLIENT (Cliente Logado - vê a loja que agendou/visitou)
+        // 3. Role ADMIN (Dono - vê seu painel)
+
+        const userRole = session?.user?.user_metadata?.role;
+
         if (publicSlug) {
             const { data: biz } = await supabase.from('business_settings').select('*').eq('slug', publicSlug).single();
             if (biz) {
@@ -117,16 +124,38 @@ function App() {
                 return;
             }
         } else if (session?.user) {
-            // Admin Mode
-            const { data: biz } = await supabase.from('business_settings').select('*').eq('user_id', session.user.id).single();
-            if (biz) {
-                const normalized = normalizeSettings(biz);
-                setSettings(normalized);
-                businessId = biz.id;
+            if (userRole === 'CLIENT') {
+                // TODO: Em um cenário real multi-tenant, buscaríamos a última loja visitada ou uma lista.
+                // Por enquanto, se o cliente logou e não tem slug, ele pode ter vindo do cadastro.
+                // Se não tivermos ID da loja, não conseguimos carregar.
+                // O ideal seria persistir a last_visited_store no metadata do user.
+                // Fallback: Tenta buscar appointments do user para achar a loja.
+                const { data: lastApt } = await supabase.from('appointments').select('business_id').eq('user_id', session.user.id).limit(1).single();
+                if (lastApt) {
+                     const { data: biz } = await supabase.from('business_settings').select('*').eq('id', lastApt.business_id).single();
+                     if (biz) {
+                        const normalized = normalizeSettings(biz);
+                        setSettings(normalized);
+                        businessId = biz.id;
+                        // Define slug para ativar modo PublicBooking
+                        setPublicSlug(biz.slug); 
+                     }
+                } else {
+                    // Cliente novo sem agendamento e sem slug na URL -> Estado indefinido
+                    // Poderíamos redirecionar para uma busca de lojas.
+                    setLoading(false);
+                    return; 
+                }
             } else {
-                // Se não encontrar settings (conta nova sem trigger), cria um padrão em memória para não quebrar UI
-                // Idealmente o AuthScreen já cria, mas por segurança:
-                console.warn("Settings não encontradas para usuário logado.");
+                // Admin Mode
+                const { data: biz } = await supabase.from('business_settings').select('*').eq('user_id', session.user.id).single();
+                if (biz) {
+                    const normalized = normalizeSettings(biz);
+                    setSettings(normalized);
+                    businessId = biz.id;
+                } else {
+                    console.warn("Settings não encontradas para usuário logado.");
+                }
             }
         }
 
@@ -215,17 +244,13 @@ function App() {
       if (success) {
           setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
 
-          // -----------------------------------------------------------
-          // WHATSAPP AUTOMATION: Ao Confirmar Agendamento
-          // -----------------------------------------------------------
+          // WHATSAPP AUTOMATION
           if (status === AppointmentStatus.CONFIRMADO) {
               const apt = appointments.find(a => a.id === id);
               if (apt) {
                   const customer = customers.find(c => c.id === apt.customerId);
                   if (customer && customer.phone) {
                       const vehicle = customer.vehicles.find(v => v.id === apt.vehicleId) || customer.vehicles[0];
-                      
-                      // Pequeno timeout para garantir que a UI atualize antes do alert
                       setTimeout(() => {
                           if (window.confirm("Agendamento Aceito! Deseja enviar a mensagem de confirmação para o cliente no WhatsApp?")) {
                               const message = generateConfirmationMessage(
@@ -243,16 +268,20 @@ function App() {
                   }
               }
           }
-          // -----------------------------------------------------------
       }
   };
 
   const handleAddAppointment = async (apt: Appointment, newCustomer?: Customer) => {
-      // 1. Obter sessão para garantir user_id
+      // 1. Obter sessão (pode ser nula para visitantes)
       const { data: { session } } = await supabase.auth.getSession();
       
-      if (!session?.user) {
-          alert("Erro: Usuário não autenticado.");
+      // Determine o owner do registro de Cliente. 
+      // Se for anonimo, usamos o ID do dono da loja (settings.user_id) para que o admin possa ver o cliente.
+      // Se for logado (admin ou cliente), usamos o ID da sessão.
+      const customerOwnerId = session?.user?.id || settings?.user_id;
+
+      if (!customerOwnerId) {
+          alert("Erro crítico: Identificação do Hangar não encontrada. Recarregue a página.");
           return;
       }
 
@@ -260,7 +289,7 @@ function App() {
       if (newCustomer) {
           const { data: custData, error: custError } = await supabase.from('customers').insert({
               business_id: settings?.id,
-              user_id: session.user.id, // Mandatory per schema
+              user_id: customerOwnerId, // Vital: Vincula ao Admin se for visitante
               name: newCustomer.name,
               phone: newCustomer.phone,
               email: newCustomer.email
@@ -273,7 +302,6 @@ function App() {
           }
           
           if (custData) {
-              // Assumindo que o modal envia pelo menos 1 veículo no array
               const vehicleData = newCustomer.vehicles[0];
               const { data: vehData } = await supabase.from('vehicles').insert({
                   customer_id: custData.id,
@@ -286,20 +314,25 @@ function App() {
               if (vehData) {
                   apt.customerId = custData.id;
                   apt.vehicleId = vehData.id;
-                  fetchData(); 
               }
           }
       }
 
       if (!apt.boxId || apt.boxId.length < 10) {
-          console.error("Invalid Box ID:", apt.boxId);
-          alert("Erro: Box de atendimento inválido. Atualize a página.");
-          return;
+          // Fallback seguro se boxId vier vazio (evita erro UUID)
+          // Tenta pegar o primeiro box disponível do estado
+          if (serviceBays.length > 0) {
+              apt.boxId = serviceBays[0].id;
+          } else {
+              console.error("Invalid Box ID:", apt.boxId);
+              alert("Erro: Nenhum box disponível. Contate o suporte.");
+              return;
+          }
       }
 
       const payload = {
         business_id: settings?.id,
-        user_id: session.user.id, // Mandatory per schema
+        user_id: session?.user?.id || null, // Null para visitantes (permitido pelo SQL)
         customer_id: apt.customerId,
         vehicle_id: apt.vehicleId,
         service_id: apt.serviceId,
@@ -310,7 +343,7 @@ function App() {
         price: apt.price,
         status: apt.status,
         observation: apt.observation,
-        box_id: apt.boxId // Must be UUID string
+        box_id: apt.boxId
       };
 
       const { data: aptData, error } = await supabase.from('appointments').insert(payload).select().single();
@@ -319,13 +352,17 @@ function App() {
           console.error("Erro ao salvar agendamento:", error);
           alert("Erro ao salvar: " + error.message);
       } else if (aptData) {
+          // Atualiza dados locais sem refresh total para UX mais fluida
           fetchData();
       }
   };
 
   if (loading) return <div className="h-screen bg-black flex items-center justify-center"><Loader2 className="animate-spin text-red-600" size={32} /></div>;
 
-  if (publicSlug && settings) {
+  // Renderiza PublicBooking se:
+  // 1. Existe publicSlug (Visitante)
+  // 2. OU Usuário logado é CLIENT (Cliente acessando painel)
+  if ((publicSlug || session?.user?.user_metadata?.role === 'CLIENT') && settings) {
       return <PublicBooking 
         currentUser={session?.user}
         businessSettings={settings}
@@ -340,15 +377,14 @@ function App() {
         onExit={() => {
             supabase.auth.signOut();
             setPublicSlug(null);
-            window.history.pushState({}, '', '/');
+            window.location.href = '/';
         }}
         onLoginRequest={() => {
-            setPublicSlug(null); 
-            window.history.pushState({}, '', '/');
+            // Mantém slug mas mostra auth
+            setAuthRole('CLIENT');
+            setShowAuth(true);
         }}
         onRegisterRequest={(data) => {
-             setPublicSlug(null);
-             window.history.pushState({}, '', '/');
              setAuthRole('CLIENT');
              setPreFillAuth(data);
              setShowAuth(true);
@@ -360,7 +396,10 @@ function App() {
       if (showAuth) {
           return <AuthScreen 
             role={authRole} 
-            onLogin={() => setShowAuth(false)} 
+            onLogin={() => {
+                setShowAuth(false);
+                fetchData(); // Recarrega para aplicar lógica de role
+            }} 
             onBack={() => setShowAuth(false)}
             preFillData={preFillAuth} 
           />;
@@ -374,7 +413,6 @@ function App() {
   if (!settings) return <div className="h-screen bg-black flex items-center justify-center text-white">Carregando Hangar...</div>;
 
   return (
-    // CORRIGIDO: height: 111.12vh para compensar zoom:0.9 e preencher a tela, removendo barra preta abaixo do sidebar
     <div className="flex w-full overflow-hidden bg-black font-sans selection:bg-red-900 selection:text-white" style={{ zoom: '0.9', height: '111.12vh' }}>
         <Sidebar 
             activeTab={activeTab} 
@@ -413,7 +451,7 @@ function App() {
                             onUpdateStatus={handleUpdateStatus}
                             onCancelAppointment={(id) => handleUpdateStatus(id, AppointmentStatus.CANCELADO)}
                             onDeleteAppointment={async (id) => { await supabase.from('appointments').delete().eq('id', id); fetchData(); }}
-                            onRefresh={fetchData}
+                            onRefresh={async () => await fetchData()}
                         />
                     )}
                     {activeTab === 'schedule' && (
@@ -429,7 +467,7 @@ function App() {
                             serviceBays={serviceBays}
                             onUpgrade={() => setActiveTab('settings')}
                             currentPlan={settings.plan_type}
-                            onRefresh={fetchData}
+                            onRefresh={async () => await fetchData()}
                         />
                     )}
                     {activeTab === 'crm' && (
@@ -439,17 +477,15 @@ function App() {
                                 const { data: { session } } = await supabase.auth.getSession();
                                 if (!session?.user) return;
 
-                                // Extrair veículos do objeto c (que vem do formulário do CRM)
                                 const { vehicles, ...customerData } = c;
 
                                 const { data: newCust, error } = await supabase.from('customers').insert({
                                     business_id: settings?.id,
-                                    user_id: session.user.id, // Obrigatório pelo schema
+                                    user_id: session.user.id, 
                                     ...customerData
                                 }).select().single();
                                 
                                 if(!error && newCust && vehicles && vehicles.length > 0) {
-                                    // Inserir veículo
                                     await supabase.from('vehicles').insert({
                                         customer_id: newCust.id,
                                         brand: vehicles[0].brand,

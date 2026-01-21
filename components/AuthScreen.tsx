@@ -52,12 +52,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ role, onLogin, onBack, p
             setRecoverSent(true);
         } 
         else if (authMode === 'REGISTER') {
+            // CRÍTICO: Enviar 'phone' nos metadados para o Trigger do Banco funcionar
             const { data, error: signUpError } = await supabase.auth.signUp({
                 email,
                 password,
                 options: {
-                    // CRITICAL: Phone must be sent here for DB Trigger linkage
-                    data: { full_name: fullName, phone, role }
+                    data: { 
+                        full_name: fullName, 
+                        phone: phone, // Vital para vincular ao cliente existente
+                        role: role 
+                    }
                 }
             });
             
@@ -82,8 +86,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ role, onLogin, onBack, p
 
                 if (bizError) {
                     console.error("Erro ao criar hangar:", bizError);
-                    // Não lançamos erro fatal aqui para não bloquear o cadastro do Auth,
-                    // o App.tsx tratará a recriação do Hangar no primeiro login.
                 }
             }
 
