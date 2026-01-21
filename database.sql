@@ -199,7 +199,7 @@ CREATE POLICY "Client Insert Appointment" ON appointments FOR INSERT TO authenti
 DROP POLICY IF EXISTS "Client View Own Appointments" ON appointments;
 CREATE POLICY "Client View Own Appointments" ON appointments FOR SELECT TO authenticated USING (
     user_id = auth.uid() OR 
-    customer_id IN (SELECT id FROM customers WHERE email = (SELECT email FROM auth.users WHERE id = auth.uid()))
+    customer_id IN (SELECT id FROM customers WHERE email = (select auth.jwt() ->> 'email') OR user_id = auth.uid())
 );
 
 -- 9.4 POLÍTICAS PARA CLIENTES (Admin pode gerenciar todos do seu hangar)
@@ -211,9 +211,10 @@ CREATE POLICY "Admin Customers" ON customers FOR ALL TO authenticated USING (
 DROP POLICY IF EXISTS "Public Insert Customer" ON customers;
 CREATE POLICY "Public Insert Customer" ON customers FOR INSERT TO authenticated, anon WITH CHECK (true);
 
+-- CORREÇÃO: Usar auth.jwt() ->> 'email' é mais seguro e evita 403 em subqueries
 DROP POLICY IF EXISTS "Client View Own Customer Data" ON customers;
 CREATE POLICY "Client View Own Customer Data" ON customers FOR SELECT TO authenticated USING (
-    email = (SELECT email FROM auth.users WHERE id = auth.uid()) OR user_id = auth.uid()
+    email = (select auth.jwt() ->> 'email') OR user_id = auth.uid()
 );
 
 -- 9.5 POLÍTICAS PARA VEÍCULOS

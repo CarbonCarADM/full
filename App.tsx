@@ -20,6 +20,8 @@ import { Loader2, Menu } from 'lucide-react';
 import { useEntitySaver } from './hooks/useEntitySaver';
 import { generateConfirmationMessage, openWhatsAppChat } from './services/whatsappService';
 import { CookieConsent } from './components/CookieConsent';
+import { generateUUID } from './lib/utils';
+import { WhatsAppModal } from './components/WhatsAppModal';
 
 function App() {
   const [session, setSession] = useState<any>(null);
@@ -44,6 +46,9 @@ function App() {
   const [showAuth, setShowAuth] = useState(false);
   const [authRole, setAuthRole] = useState<'ADMIN' | 'CLIENT'>('ADMIN');
   const [preFillAuth, setPreFillAuth] = useState<{name: string, phone: string} | null>(null);
+
+  // WhatsApp Modal State
+  const [whatsappModal, setWhatsappModal] = useState<{isOpen: boolean, phone: string, message: string, customerName: string} | null>(null);
 
   const { save } = useEntitySaver();
 
@@ -151,64 +156,85 @@ function App() {
             return;
         }
 
-        // Parallel Fetching
-        const results = await Promise.allSettled([
-            supabase.from('appointments').select('*').eq('business_id', businessId),
-            supabase.from('services').select('*').eq('business_id', businessId).eq('is_active', true),
-            supabase.from('service_bays').select('*').eq('business_id', businessId).order('name', { ascending: true }),
-            supabase.from('expenses').select('*').eq('business_id', businessId),
-            supabase.from('portfolio_items').select('*').eq('business_id', businessId).order('created_at', { ascending: false }),
-            supabase.from('reviews').select('*').eq('business_id', businessId).order('created_at', { ascending: false }),
-            supabase.from('customers').select('*').eq('business_id', businessId)
-        ]);
-
-        const [apts, servs, bays, exps, port, revs, custRes] = results.map(r => r.status === 'fulfilled' ? r.value : { data: null });
-
-        if (apts.data) {
-            setAppointments(apts.data.map((a: any) => ({
-                ...a, serviceType: a.service_type, durationMinutes: a.duration_minutes, customerId: a.customer_id, vehicleId: a.vehicle_id, boxId: a.box_id
-            })));
-        }
+        // --- FETCH LOGIC SPLIT BASED ON ROLE ---
         
-        if (servs.data) {
-            setServices(servs.data as ServiceItem[]);
+        if (userRole === 'CLIENT') {
+            // CLIENTS: Fetch only public data. User-specific data is handled by PublicBooking component.
+            const results = await Promise.allSettled([
+                supabase.from('services').select('*').eq('business_id', businessId).eq('is_active', true),
+                supabase.from('portfolio_items').select('*').eq('business_id', businessId).order('created_at', { ascending: false }),
+                supabase.from('reviews').select('*').eq('business_id', businessId).order('created_at', { ascending: false }),
+            ]);
+
+            const [servs, port, revs] = results.map(r => r.status === 'fulfilled' ? r.value : { data: null });
+
+            if (servs.data) setServices(servs.data as ServiceItem[]);
+            else setServices([]);
+
+            if (port.data) {
+                setPortfolio(port.data.map((p: any) => ({ 
+                    ...p, imageUrl: p.image_url, date: p.created_at 
+                })));
+            }
+            
+            if (revs.data) {
+                setReviews(revs.data.map((r: any) => ({ 
+                    ...r, customerName: r.customer_name, date: r.created_at 
+                })));
+            }
+
         } else {
-            setServices([]);
+            // ADMINS: Fetch Everything
+            const results = await Promise.allSettled([
+                supabase.from('appointments').select('*').eq('business_id', businessId),
+                supabase.from('services').select('*').eq('business_id', businessId).eq('is_active', true),
+                supabase.from('service_bays').select('*').eq('business_id', businessId).order('name', { ascending: true }),
+                supabase.from('expenses').select('*').eq('business_id', businessId),
+                supabase.from('portfolio_items').select('*').eq('business_id', businessId).order('created_at', { ascending: false }),
+                supabase.from('reviews').select('*').eq('business_id', businessId).order('created_at', { ascending: false }),
+                supabase.from('customers').select('*').eq('business_id', businessId)
+            ]);
+
+            const [apts, servs, bays, exps, port, revs, custRes] = results.map(r => r.status === 'fulfilled' ? r.value : { data: null });
+
+            if (apts.data) {
+                setAppointments(apts.data.map((a: any) => ({
+                    ...a, serviceType: a.service_type, durationMinutes: a.duration_minutes, customerId: a.customer_id, vehicleId: a.vehicle_id, boxId: a.box_id
+                })));
+            }
+            
+            if (servs.data) setServices(servs.data as ServiceItem[]);
+            else setServices([]);
+
+            if (bays.data) setServiceBays(bays.data as ServiceBay[]);
+            if (exps.data) setExpenses(exps.data as Expense[]);
+            
+            if (port.data) {
+                setPortfolio(port.data.map((p: any) => ({ 
+                    ...p, imageUrl: p.image_url, date: p.created_at 
+                })));
+            }
+            
+            if (revs.data) {
+                setReviews(revs.data.map((r: any) => ({ 
+                    ...r, customerName: r.customer_name, date: r.created_at 
+                })));
+            }
+
+            let processedCustomers: Customer[] = [];
+            if (custRes.data && custRes.data.length > 0) {
+                const customerIds = custRes.data.map((c: any) => c.id);
+                const { data: vehiclesData } = await supabase.from('vehicles').select('*').in('customer_id', customerIds);
+                processedCustomers = custRes.data.map((c: any) => ({
+                    id: c.id, name: c.name, phone: c.phone || '', email: c.email || '', totalSpent: Number(c.total_spent), lastVisit: c.last_visit, xpPoints: c.xp_points, washes: c.washes_count,
+                    vehicles: vehiclesData?.filter((v: any) => v.customer_id === c.id).map((v: any) => ({
+                        id: v.id, brand: v.brand || '', model: v.model || '', plate: v.plate || '', color: v.color || '', type: v.type || 'CARRO'
+                    })) || []
+                }));
+            }
+            setCustomers(processedCustomers);
         }
 
-        if (bays.data) setServiceBays(bays.data as ServiceBay[]);
-        if (exps.data) setExpenses(exps.data as Expense[]);
-        
-        // Mapeamento correto do Portfólio
-        if (port.data) {
-            setPortfolio(port.data.map((p: any) => ({ 
-                ...p, 
-                imageUrl: p.image_url,
-                date: p.created_at 
-            })));
-        }
-        
-        // Mapeamento correto dos Reviews
-        if (revs.data) {
-            setReviews(revs.data.map((r: any) => ({ 
-                ...r, 
-                customerName: r.customer_name,
-                date: r.created_at 
-            })));
-        }
-
-        let processedCustomers: Customer[] = [];
-        if (custRes.data && custRes.data.length > 0) {
-            const customerIds = custRes.data.map((c: any) => c.id);
-            const { data: vehiclesData } = await supabase.from('vehicles').select('*').in('customer_id', customerIds);
-            processedCustomers = custRes.data.map((c: any) => ({
-                id: c.id, name: c.name, phone: c.phone || '', email: c.email || '', totalSpent: Number(c.total_spent), lastVisit: c.last_visit, xpPoints: c.xp_points, washes: c.washes_count,
-                vehicles: vehiclesData?.filter((v: any) => v.customer_id === c.id).map((v: any) => ({
-                    id: v.id, brand: v.brand || '', model: v.model || '', plate: v.plate || '', color: v.color || '', type: v.type || 'CARRO'
-                })) || []
-            }));
-        }
-        setCustomers(processedCustomers);
     } catch (error) {
         console.error("Data Load Error:", error);
     } finally {
@@ -221,20 +247,38 @@ function App() {
   }, [session, publicSlug]);
 
   const handleUpdateStatus = async (id: string, status: AppointmentStatus) => {
+      // Capturamos o agendamento atual antes da atualização
+      const currentApt = appointments.find(a => a.id === id);
+      
       const { success } = await save('appointments', { id, status });
+      
       if (success) {
           setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
-          if (status === AppointmentStatus.CONFIRMADO) {
-              const apt = appointments.find(a => a.id === id);
-              const customer = customers.find(c => c.id === apt?.customerId);
-              if (apt && customer && customer.phone) {
-                  const vehicle = customer.vehicles.find(v => v.id === apt.vehicleId) || customer.vehicles[0];
-                  setTimeout(() => {
-                      if (window.confirm("Enviar confirmação via WhatsApp?")) {
-                          const msg = generateConfirmationMessage(settings?.business_name || 'CarbonCar', customer.name, apt.date, apt.time, vehicle?.model || 'Veículo', vehicle?.plate || '---', apt.serviceType);
-                          openWhatsAppChat(customer.phone, msg);
-                      }
-                  }, 100);
+          
+          if (status === AppointmentStatus.CONFIRMADO && currentApt) {
+              const customer = customers.find(c => c.id === currentApt.customerId);
+              
+              if (customer && customer.phone) {
+                  // Localiza o veículo vinculado ao agendamento
+                  const vehicle = (customer.vehicles || []).find(v => v.id === currentApt.vehicleId) || 
+                                  (customer.vehicles && customer.vehicles.length > 0 ? customer.vehicles[0] : null);
+                  
+                  const msg = generateConfirmationMessage(
+                      settings?.business_name || 'CarbonCar',
+                      customer.name,
+                      currentApt.date,
+                      currentApt.time,
+                      vehicle?.model || 'Veículo',
+                      vehicle?.plate || '',
+                      currentApt.serviceType
+                  );
+                  
+                  setWhatsappModal({
+                      isOpen: true,
+                      phone: customer.phone,
+                      message: msg,
+                      customerName: customer.name
+                  });
               }
           }
       }
@@ -270,30 +314,52 @@ function App() {
               if (existingVeh) {
                   finalVehicleId = existingVeh.id;
               } else {
-                  const { data: vData } = await supabase.from('vehicles').insert({
-                      customer_id: finalCustomerId, brand: vehicleData.brand, model: vehicleData.model, plate: vehicleData.plate.toUpperCase(), type: 'CARRO'
-                  }).select().single();
-                  if (vData) finalVehicleId = vData.id;
+                  const newVehId = generateUUID();
+                  const { error: vErr } = await supabase.from('vehicles').insert({
+                      id: newVehId,
+                      customer_id: finalCustomerId, 
+                      brand: vehicleData.brand, 
+                      model: vehicleData.model, 
+                      plate: vehicleData.plate.toUpperCase(), 
+                      type: 'CARRO'
+                  });
+                  
+                  if (!vErr) finalVehicleId = newVehId;
+                  else console.error("Erro ao criar veículo:", vErr);
               }
           } else {
-              // IMPORTANTE: user_id aqui deve ser null se for agendamento público (anônimo)
-              const { data: cData, error: cErr } = await supabase.from('customers').insert({
+              const newCustId = generateUUID();
+              
+              const { error: cErr } = await supabase.from('customers').insert({
+                  id: newCustId,
                   business_id: settings.id, 
                   user_id: customerUserId, 
                   name: newCustomer.name, 
                   phone: newCustomer.phone, 
                   email: newCustomer.email
-              }).select().single();
+              });
               
-              if (cErr) { console.error("Erro Customer Insert:", cErr); alert("Erro ao cadastrar cliente. Verifique os dados."); return; }
-              if (cData) {
-                  finalCustomerId = cData.id;
-                  const vehicleData = newCustomer.vehicles[0];
-                  const { data: vData } = await supabase.from('vehicles').insert({
-                      customer_id: cData.id, brand: vehicleData.brand, model: vehicleData.model, plate: vehicleData.plate.toUpperCase(), type: 'CARRO'
-                  }).select().single();
-                  if (vData) finalVehicleId = vData.id;
+              if (cErr) { 
+                  console.error("Erro Customer Insert:", cErr); 
+                  alert("Erro ao cadastrar cliente. Verifique os dados."); 
+                  return; 
               }
+
+              finalCustomerId = newCustId;
+              const vehicleData = newCustomer.vehicles[0];
+              const newVehId = generateUUID();
+
+              const { error: vErr } = await supabase.from('vehicles').insert({
+                  id: newVehId,
+                  customer_id: newCustId, 
+                  brand: vehicleData.brand, 
+                  model: vehicleData.model, 
+                  plate: vehicleData.plate.toUpperCase(), 
+                  type: 'CARRO'
+              });
+
+              if (!vErr) finalVehicleId = newVehId;
+              else console.error("Erro ao criar veículo:", vErr);
           }
       }
 
@@ -382,6 +448,17 @@ function App() {
             </SubscriptionGuard>
         </div>
         <CookieConsent />
+        
+        {/* WhatsApp Notification Modal */}
+        {whatsappModal && (
+            <WhatsAppModal 
+                isOpen={whatsappModal.isOpen}
+                onClose={() => setWhatsappModal(null)}
+                phone={whatsappModal.phone}
+                message={whatsappModal.message}
+                customerName={whatsappModal.customerName}
+            />
+        )}
     </div>
   );
 }
