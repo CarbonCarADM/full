@@ -29,10 +29,25 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ role, onLogin, onBack, p
 
   // Auto-fill logic from props (Conversion Flow)
   useEffect(() => {
+      // 1. Check Props
       if (preFillData) {
           setFullName(preFillData.name);
           setPhone(preFillData.phone);
           setAuthMode('REGISTER');
+      } 
+      // 2. Check URL Parameters (Fallback for direct link access)
+      else {
+          const params = new URLSearchParams(window.location.search);
+          const urlType = params.get('type');
+          
+          if (urlType === 'client') {
+              const urlName = params.get('name');
+              const urlPhone = params.get('phone');
+              
+              if (urlName) setFullName(urlName);
+              if (urlPhone) setPhone(urlPhone);
+              setAuthMode('REGISTER');
+          }
       }
   }, [preFillData]);
 
@@ -52,6 +67,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ role, onLogin, onBack, p
             setRecoverSent(true);
         } 
         else if (authMode === 'REGISTER') {
+            // Check URL type as well to ensure correct role assignment
+            const params = new URLSearchParams(window.location.search);
+            const isClientFlow = role === 'CLIENT' || params.get('type') === 'client';
+            const finalRole = isClientFlow ? 'CLIENT' : 'ADMIN';
+
             // CRÍTICO: Enviar 'phone' nos metadados para o Trigger do Banco funcionar
             const { data, error: signUpError } = await supabase.auth.signUp({
                 email,
@@ -60,7 +80,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ role, onLogin, onBack, p
                     data: { 
                         full_name: fullName, 
                         phone: phone, // Vital para vincular ao cliente existente
-                        role: role 
+                        role: finalRole 
                     }
                 }
             });
@@ -69,7 +89,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ role, onLogin, onBack, p
             if (!data.user) throw new Error("Erro ao criar usuário.");
 
             // Only create Business Settings (Hangar) if Admin
-            if (role === 'ADMIN') {
+            if (finalRole === 'ADMIN') {
                 const slug = fullName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + Math.floor(Math.random() * 1000);
                 
                 const { error: bizError } = await supabase.from('business_settings').insert({

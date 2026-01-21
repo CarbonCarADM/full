@@ -306,7 +306,9 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
     // --- HANDLERS ---
 
     const handleFinalize = async () => {
+        // BUG FIX: Removida verificação de user (Login não é obrigatório para agendar)
         if (!selectedService || !selectedDate || !selectedTime) return;
+        
         setLoading(true);
         const apt: any = { serviceId: selectedService.id, date: selectedDate, time: selectedTime };
         const customerData = { name: guestForm.name, phone: guestForm.phone, vehicles: [{ brand: vehicleForm.brand, model: vehicleForm.model, plate: vehicleForm.plate }] };

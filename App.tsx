@@ -174,6 +174,7 @@ function App() {
             { data: revs },
             custRes
         ] = await Promise.all([
+            // BUG 4 FIX: Fetching appointments by business_id ensures Admins see guests (user_id: null)
             supabase.from('appointments').select('*').eq('business_id', businessId),
             supabase.from('services').select('*').eq('business_id', businessId).eq('is_active', true),
             supabase.from('service_bays').select('*').eq('business_id', businessId).order('name', { ascending: true }),
