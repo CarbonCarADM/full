@@ -48,25 +48,18 @@ function App() {
   const { save } = useEntitySaver();
 
   useEffect(() => {
-    // Check URL for public studio
     const params = new URLSearchParams(window.location.search);
     const studioSlug = params.get('studio');
     if (studioSlug) {
       setPublicSlug(studioSlug);
     }
 
-    // Auth Listener
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (!studioSlug) {
-          // Only stop loading here if not public mode (public mode fetches data first)
-          if(!session) setLoading(false); 
-      }
+      if (!studioSlug && !session) setLoading(false);
     });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
 
@@ -74,87 +67,81 @@ function App() {
   }, []);
 
   const normalizeSettings = (biz: any): BusinessSettings => {
-      // Garante que operating_days e blocked_dates existam na raiz, extraindo de configs se necessário
       let operating_days = biz.operating_days || biz.configs?.operating_days || [];
       const blocked_dates = biz.blocked_dates || biz.configs?.blocked_dates || [];
 
-      // Fallback: Se não houver horários configurados, usar padrão comercial (Seg-Sex 08-18h)
-      // Isso previne que a agenda apareça "travada" ou vazia para contas novas
       if (operating_days.length === 0) {
           operating_days = [
-              { dayOfWeek: 0, isOpen: false, openTime: '00:00', closeTime: '00:00' }, // Dom
-              { dayOfWeek: 1, isOpen: true, openTime: '08:00', closeTime: '18:00' },  // Seg
+              { dayOfWeek: 0, isOpen: false, openTime: '00:00', closeTime: '00:00' },
+              { dayOfWeek: 1, isOpen: true, openTime: '08:00', closeTime: '18:00' },
               { dayOfWeek: 2, isOpen: true, openTime: '08:00', closeTime: '18:00' },
               { dayOfWeek: 3, isOpen: true, openTime: '08:00', closeTime: '18:00' },
               { dayOfWeek: 4, isOpen: true, openTime: '08:00', closeTime: '18:00' },
               { dayOfWeek: 5, isOpen: true, openTime: '08:00', closeTime: '18:00' },
-              { dayOfWeek: 6, isOpen: true, openTime: '09:00', closeTime: '14:00' }   // Sab
+              { dayOfWeek: 6, isOpen: true, openTime: '09:00', closeTime: '14:00' }
           ];
       }
 
-      return {
-          ...biz,
-          operating_days,
-          blocked_dates
-      };
+      return { ...biz, operating_days, blocked_dates };
   };
 
   const fetchData = async () => {
     try {
         setLoading(true);
         let businessId = '';
-
-        // Lógica de Prioridade: 
-        // 1. Slug na URL (Visitante)
-        // 2. Role CLIENT (Cliente Logado - vê a loja que agendou/visitou)
-        // 3. Role ADMIN (Dono - vê seu painel)
-
         const userRole = session?.user?.user_metadata?.role;
 
+        // PRIORIDADE 1: Slug na URL
         if (publicSlug) {
-            const { data: biz } = await supabase.from('business_settings').select('*').eq('slug', publicSlug).single();
+            const { data: biz, error: bizErr } = await supabase
+                .from('business_settings')
+                .select('*')
+                .eq('slug', publicSlug)
+                .maybeSingle();
+
             if (biz) {
                 const normalized = normalizeSettings(biz);
                 setSettings(normalized);
                 businessId = biz.id;
-            } else {
-                alert("Hangar não encontrado.");
-                setPublicSlug(null);
-                setLoading(false);
-                return;
+            } else if (bizErr) {
+                console.error("Erro ao buscar hangar pelo slug:", bizErr);
             }
-        } else if (session?.user) {
+        } 
+        
+        // PRIORIDADE 2: Usuário Logado (Se não encontrou por slug ou se for admin)
+        if (!businessId && session?.user) {
             if (userRole === 'CLIENT') {
-                // TODO: Em um cenário real multi-tenant, buscaríamos a última loja visitada ou uma lista.
-                // Por enquanto, se o cliente logou e não tem slug, ele pode ter vindo do cadastro.
-                // Se não tivermos ID da loja, não conseguimos carregar.
-                // O ideal seria persistir a last_visited_store no metadata do user.
-                // Fallback: Tenta buscar appointments do user para achar a loja.
-                const { data: lastApt } = await supabase.from('appointments').select('business_id').eq('user_id', session.user.id).limit(1).single();
+                const { data: lastApt } = await supabase
+                    .from('appointments')
+                    .select('business_id')
+                    .eq('user_id', session.user.id)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+
                 if (lastApt) {
-                     const { data: biz } = await supabase.from('business_settings').select('*').eq('id', lastApt.business_id).single();
+                     const { data: biz } = await supabase
+                        .from('business_settings')
+                        .select('*')
+                        .eq('id', lastApt.business_id)
+                        .maybeSingle();
+
                      if (biz) {
-                        const normalized = normalizeSettings(biz);
-                        setSettings(normalized);
+                        setSettings(normalizeSettings(biz));
                         businessId = biz.id;
-                        // Define slug para ativar modo PublicBooking
-                        setPublicSlug(biz.slug); 
+                        if (!publicSlug) setPublicSlug(biz.slug); 
                      }
-                } else {
-                    // Cliente novo sem agendamento e sem slug na URL -> Estado indefinido
-                    // Poderíamos redirecionar para uma busca de lojas.
-                    setLoading(false);
-                    return; 
                 }
             } else {
-                // Admin Mode
-                const { data: biz } = await supabase.from('business_settings').select('*').eq('user_id', session.user.id).single();
+                const { data: biz } = await supabase
+                    .from('business_settings')
+                    .select('*')
+                    .eq('user_id', session.user.id)
+                    .maybeSingle();
+
                 if (biz) {
-                    const normalized = normalizeSettings(biz);
-                    setSettings(normalized);
+                    setSettings(normalizeSettings(biz));
                     businessId = biz.id;
-                } else {
-                    console.warn("Settings não encontradas para usuário logado.");
                 }
             }
         }
@@ -165,68 +152,63 @@ function App() {
         }
 
         // Parallel Fetching
-        const [
-            { data: apts },
-            { data: servs },
-            { data: bays },
-            { data: exps },
-            { data: port },
-            { data: revs },
-            custRes
-        ] = await Promise.all([
-            // BUG 4 FIX: Fetching appointments by business_id ensures Admins see guests (user_id: null)
+        const results = await Promise.allSettled([
             supabase.from('appointments').select('*').eq('business_id', businessId),
             supabase.from('services').select('*').eq('business_id', businessId).eq('is_active', true),
             supabase.from('service_bays').select('*').eq('business_id', businessId).order('name', { ascending: true }),
             supabase.from('expenses').select('*').eq('business_id', businessId),
-            supabase.from('portfolio_items').select('*').eq('business_id', businessId),
-            supabase.from('reviews').select('*').eq('business_id', businessId),
+            supabase.from('portfolio_items').select('*').eq('business_id', businessId).order('created_at', { ascending: false }),
+            supabase.from('reviews').select('*').eq('business_id', businessId).order('created_at', { ascending: false }),
             supabase.from('customers').select('*').eq('business_id', businessId)
         ]);
 
-        if (apts) {
-            setAppointments(apts.map(a => ({
-                ...a,
-                serviceType: a.service_type,
-                durationMinutes: a.duration_minutes,
-                customerId: a.customer_id,
-                vehicleId: a.vehicle_id,
-                boxId: a.box_id
+        const [apts, servs, bays, exps, port, revs, custRes] = results.map(r => r.status === 'fulfilled' ? r.value : { data: null });
+
+        if (apts.data) {
+            setAppointments(apts.data.map((a: any) => ({
+                ...a, serviceType: a.service_type, durationMinutes: a.duration_minutes, customerId: a.customer_id, vehicleId: a.vehicle_id, boxId: a.box_id
             })));
         }
-        if (servs) setServices(servs as ServiceItem[]);
-        if (bays) setServiceBays(bays as ServiceBay[]);
-        if (exps) setExpenses(exps as Expense[]);
-        if (port) setPortfolio(port.map(p => ({ ...p, imageUrl: p.image_url })));
-        if (revs) setReviews(revs.map(r => ({ ...r, customerName: r.customer_name })));
+        
+        if (servs.data) {
+            setServices(servs.data as ServiceItem[]);
+        } else {
+            setServices([]);
+        }
 
-        // Customer Logic
+        if (bays.data) setServiceBays(bays.data as ServiceBay[]);
+        if (exps.data) setExpenses(exps.data as Expense[]);
+        
+        // Mapeamento correto do Portfólio
+        if (port.data) {
+            setPortfolio(port.data.map((p: any) => ({ 
+                ...p, 
+                imageUrl: p.image_url,
+                date: p.created_at 
+            })));
+        }
+        
+        // Mapeamento correto dos Reviews
+        if (revs.data) {
+            setReviews(revs.data.map((r: any) => ({ 
+                ...r, 
+                customerName: r.customer_name,
+                date: r.created_at 
+            })));
+        }
+
         let processedCustomers: Customer[] = [];
         if (custRes.data && custRes.data.length > 0) {
             const customerIds = custRes.data.map((c: any) => c.id);
             const { data: vehiclesData } = await supabase.from('vehicles').select('*').in('customer_id', customerIds);
-            
             processedCustomers = custRes.data.map((c: any) => ({
-                id: c.id,
-                name: c.name,
-                phone: c.phone || '',
-                email: c.email || '',
-                totalSpent: Number(c.total_spent),
-                lastVisit: c.last_visit,
-                xpPoints: c.xp_points,
-                washes: c.washes_count,
+                id: c.id, name: c.name, phone: c.phone || '', email: c.email || '', totalSpent: Number(c.total_spent), lastVisit: c.last_visit, xpPoints: c.xp_points, washes: c.washes_count,
                 vehicles: vehiclesData?.filter((v: any) => v.customer_id === c.id).map((v: any) => ({
-                    id: v.id,
-                    brand: v.brand || '',
-                    model: v.model || '',
-                    plate: v.plate || '',
-                    color: v.color || '',
-                    type: v.type || 'CARRO'
+                    id: v.id, brand: v.brand || '', model: v.model || '', plate: v.plate || '', color: v.color || '', type: v.type || 'CARRO'
                 })) || []
             }));
         }
         setCustomers(processedCustomers);
-
     } catch (error) {
         console.error("Data Load Error:", error);
     } finally {
@@ -235,134 +217,125 @@ function App() {
   };
 
   useEffect(() => {
-      if (session || publicSlug) {
-          fetchData();
-      }
+      if (session || publicSlug) fetchData();
   }, [session, publicSlug]);
 
   const handleUpdateStatus = async (id: string, status: AppointmentStatus) => {
       const { success } = await save('appointments', { id, status });
       if (success) {
           setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
-
-          // WHATSAPP AUTOMATION
           if (status === AppointmentStatus.CONFIRMADO) {
               const apt = appointments.find(a => a.id === id);
-              if (apt) {
-                  const customer = customers.find(c => c.id === apt.customerId);
-                  if (customer && customer.phone) {
-                      const vehicle = customer.vehicles.find(v => v.id === apt.vehicleId) || customer.vehicles[0];
-                      setTimeout(() => {
-                          if (window.confirm("Agendamento Aceito! Deseja enviar a mensagem de confirmação para o cliente no WhatsApp?")) {
-                              const message = generateConfirmationMessage(
-                                  settings?.business_name || 'CarbonCar',
-                                  customer.name,
-                                  apt.date,
-                                  apt.time,
-                                  vehicle?.model || 'Veículo',
-                                  vehicle?.plate || '---',
-                                  apt.serviceType
-                              );
-                              openWhatsAppChat(customer.phone, message);
-                          }
-                      }, 100);
-                  }
+              const customer = customers.find(c => c.id === apt?.customerId);
+              if (apt && customer && customer.phone) {
+                  const vehicle = customer.vehicles.find(v => v.id === apt.vehicleId) || customer.vehicles[0];
+                  setTimeout(() => {
+                      if (window.confirm("Enviar confirmação via WhatsApp?")) {
+                          const msg = generateConfirmationMessage(settings?.business_name || 'CarbonCar', customer.name, apt.date, apt.time, vehicle?.model || 'Veículo', vehicle?.plate || '---', apt.serviceType);
+                          openWhatsAppChat(customer.phone, msg);
+                      }
+                  }, 100);
               }
           }
       }
   };
 
   const handleAddAppointment = async (apt: Appointment, newCustomer?: Customer) => {
-      // 1. Obter sessão (pode ser nula para visitantes)
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
       
-      // Determine o owner do registro de Cliente. 
-      // Se for anonimo, usamos o ID do dono da loja (settings.user_id) para que o admin possa ver o cliente.
-      // Se for logado (admin ou cliente), usamos o ID da sessão.
-      const customerOwnerId = session?.user?.id || settings?.user_id;
+      // Se não houver sessão, não atribuímos user_id para evitar erro de RLS ao tentar salvar como Admin sendo anônimo.
+      const customerUserId = currentSession?.user?.id || null;
 
-      if (!customerOwnerId) {
-          alert("Erro crítico: Identificação do Hangar não encontrada. Recarregue a página.");
+      if (!settings) {
+          alert("Hangar não identificado. Recarregue a página.");
           return;
       }
 
-      // Logic to save customer/vehicle first if new, then appointment
-      if (newCustomer) {
-          const { data: custData, error: custError } = await supabase.from('customers').insert({
-              business_id: settings?.id,
-              user_id: customerOwnerId, // Vital: Vincula ao Admin se for visitante
-              name: newCustomer.name,
-              phone: newCustomer.phone,
-              email: newCustomer.email
-          }).select().single();
-          
-          if (custError) {
-              console.error("Erro ao criar cliente:", custError);
-              alert("Erro ao salvar cliente. Verifique os dados.");
-              return;
-          }
-          
-          if (custData) {
-              const vehicleData = newCustomer.vehicles[0];
-              const { data: vehData } = await supabase.from('vehicles').insert({
-                  customer_id: custData.id,
-                  brand: vehicleData.brand,
-                  model: vehicleData.model,
-                  plate: vehicleData.plate,
-                  type: 'CARRO'
-              }).select().single();
+      let finalCustomerId = apt.customerId;
+      let finalVehicleId = apt.vehicleId;
 
-              if (vehData) {
-                  apt.customerId = custData.id;
-                  apt.vehicleId = vehData.id;
+      if (newCustomer) {
+          const { data: existingCust } = await supabase
+            .from('customers')
+            .select('id, vehicles(id, plate)')
+            .eq('business_id', settings.id)
+            .eq('phone', newCustomer.phone)
+            .maybeSingle();
+
+          if (existingCust) {
+              finalCustomerId = existingCust.id;
+              const vehicleData = newCustomer.vehicles[0];
+              const existingVeh = existingCust.vehicles.find((v: any) => v.plate === vehicleData.plate.toUpperCase());
+              
+              if (existingVeh) {
+                  finalVehicleId = existingVeh.id;
+              } else {
+                  const { data: vData } = await supabase.from('vehicles').insert({
+                      customer_id: finalCustomerId, brand: vehicleData.brand, model: vehicleData.model, plate: vehicleData.plate.toUpperCase(), type: 'CARRO'
+                  }).select().single();
+                  if (vData) finalVehicleId = vData.id;
+              }
+          } else {
+              // IMPORTANTE: user_id aqui deve ser null se for agendamento público (anônimo)
+              const { data: cData, error: cErr } = await supabase.from('customers').insert({
+                  business_id: settings.id, 
+                  user_id: customerUserId, 
+                  name: newCustomer.name, 
+                  phone: newCustomer.phone, 
+                  email: newCustomer.email
+              }).select().single();
+              
+              if (cErr) { console.error("Erro Customer Insert:", cErr); alert("Erro ao cadastrar cliente. Verifique os dados."); return; }
+              if (cData) {
+                  finalCustomerId = cData.id;
+                  const vehicleData = newCustomer.vehicles[0];
+                  const { data: vData } = await supabase.from('vehicles').insert({
+                      customer_id: cData.id, brand: vehicleData.brand, model: vehicleData.model, plate: vehicleData.plate.toUpperCase(), type: 'CARRO'
+                  }).select().single();
+                  if (vData) finalVehicleId = vData.id;
               }
           }
       }
 
-      if (!apt.boxId || apt.boxId.length < 10) {
-          // Fallback seguro se boxId vier vazio (evita erro UUID)
-          // Tenta pegar o primeiro box disponível do estado
-          if (serviceBays.length > 0) {
-              apt.boxId = serviceBays[0].id;
-          } else {
-              console.error("Invalid Box ID:", apt.boxId);
-              alert("Erro: Nenhum box disponível. Contate o suporte.");
-              return;
-          }
+      // Box Fallback
+      let finalBoxId = apt.boxId;
+      if (!finalBoxId || finalBoxId.length < 10) {
+          if (serviceBays.length > 0) finalBoxId = serviceBays[0].id;
+          else { alert("Nenhum box disponível."); return; }
       }
 
-      const payload = {
-        business_id: settings?.id,
-        user_id: session?.user?.id || null, // Null para visitantes (permitido pelo SQL)
-        customer_id: apt.customerId,
-        vehicle_id: apt.vehicleId,
+      const { error } = await supabase.from('appointments').insert({
+        business_id: settings.id,
+        user_id: customerUserId, 
+        customer_id: finalCustomerId,
+        vehicle_id: finalVehicleId,
         service_id: apt.serviceId,
         service_type: apt.serviceType,
         date: apt.date,
         time: apt.time,
         duration_minutes: apt.durationMinutes,
         price: apt.price,
-        status: apt.status,
+        status: AppointmentStatus.NOVO,
         observation: apt.observation,
-        box_id: apt.boxId
-      };
-
-      const { data: aptData, error } = await supabase.from('appointments').insert(payload).select().single();
+        box_id: finalBoxId
+      });
       
-      if (error) {
-          console.error("Erro ao salvar agendamento:", error);
-          alert("Erro ao salvar: " + error.message);
-      } else if (aptData) {
-          // Atualiza dados locais sem refresh total para UX mais fluida
-          fetchData();
-      }
+      if (error) alert("Erro ao agendar: " + error.message);
+      else fetchData();
+  };
+
+  const handleReplyReview = async (id: string, reply: string) => {
+      const { error } = await supabase
+          .from('reviews')
+          .update({ reply })
+          .eq('id', id);
+      
+      if (error) throw error;
+      await fetchData();
   };
 
   if (loading) return <div className="h-screen bg-black flex items-center justify-center"><Loader2 className="animate-spin text-red-600" size={32} /></div>;
 
-  // Renderiza PublicBooking se:
-  // 1. Existe publicSlug (Visitante)
-  // 2. OU Usuário logado é CLIENT (Cliente acessando painel)
   if ((publicSlug || session?.user?.user_metadata?.role === 'CLIENT') && settings) {
       return <PublicBooking 
         currentUser={session?.user}
@@ -380,175 +353,31 @@ function App() {
             setPublicSlug(null);
             window.location.href = '/';
         }}
-        onLoginRequest={() => {
-            // Mantém slug mas mostra auth
-            setAuthRole('CLIENT');
-            setShowAuth(true);
-        }}
-        onRegisterRequest={(data) => {
-             setAuthRole('CLIENT');
-             setPreFillAuth(data);
-             setShowAuth(true);
-        }}
+        onLoginRequest={() => { setAuthRole('CLIENT'); setShowAuth(true); }}
+        onRegisterRequest={(data) => { setAuthRole('CLIENT'); setPreFillAuth(data); setShowAuth(true); }}
       />
   }
 
   if (!session) {
-      if (showAuth) {
-          return <AuthScreen 
-            role={authRole} 
-            onLogin={() => {
-                setShowAuth(false);
-                fetchData(); // Recarrega para aplicar lógica de role
-            }} 
-            onBack={() => setShowAuth(false)}
-            preFillData={preFillAuth} 
-          />;
-      }
-      return <WelcomeScreen onSelectFlow={(role, mode) => {
-          setAuthRole(role);
-          setShowAuth(true);
-      }} />;
+      if (showAuth) return <AuthScreen role={authRole} onLogin={() => { setShowAuth(false); fetchData(); }} onBack={() => setShowAuth(false)} preFillData={preFillAuth} />;
+      return <WelcomeScreen onSelectFlow={(role) => { setAuthRole(role); setShowAuth(true); }} />;
   }
 
-  if (!settings) return <div className="h-screen bg-black flex items-center justify-center text-white">Carregando Hangar...</div>;
+  if (!settings) return <div className="h-screen bg-black flex items-center justify-center text-white">Configurações não encontradas.</div>;
 
   return (
-    <div className="flex w-full overflow-hidden bg-black font-sans selection:bg-red-900 selection:text-white" style={{ zoom: '0.9', height: '111.12vh' }}>
-        <Sidebar 
-            activeTab={activeTab} 
-            setActiveTab={setActiveTab} 
-            currentPlan={settings.plan_type || PlanType.START}
-            isOpen={sidebarOpen}
-            onClose={() => setSidebarOpen(false)}
-            onUpgrade={() => setActiveTab('assinatura')} 
-            onLogout={() => supabase.auth.signOut()}
-            logoUrl={settings.profile_image_url}
-            businessName={settings.business_name}
-            slug={settings.slug}
-        />
-        
+    <div className="flex w-full overflow-hidden bg-black font-sans" style={{ zoom: '0.9', height: '111.12vh' }}>
+        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} currentPlan={settings.plan_type || PlanType.START} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} onUpgrade={() => setActiveTab('settings')} onLogout={() => supabase.auth.signOut()} logoUrl={settings.profile_image_url} businessName={settings.business_name} slug={settings.slug} />
         <div className="flex-1 flex flex-col min-w-0 h-full relative">
-            <button 
-                onClick={() => setSidebarOpen(true)}
-                className="md:hidden absolute top-4 left-4 z-50 p-2 bg-zinc-900 rounded-lg text-white"
-            >
-                <Menu size={20} />
-            </button>
-
-            <SubscriptionGuard 
-                businessId={settings.id || ''} 
-                onPlanChange={fetchData}
-            >
+            <button onClick={() => setSidebarOpen(true)} className="md:hidden absolute top-4 left-4 z-50 p-2 bg-zinc-900 rounded-lg text-white"><Menu size={20} /></button>
+            <SubscriptionGuard businessId={settings.id || ''} onPlanChange={fetchData}>
                 <main className="flex-1 h-full overflow-y-auto bg-black custom-scrollbar pb-10">
-                    {activeTab === 'dashboard' && (
-                        <Dashboard 
-                            currentPlan={settings.plan_type || PlanType.START}
-                            appointments={appointments}
-                            customers={customers}
-                            onUpgrade={() => setActiveTab('settings')}
-                            setActiveTab={setActiveTab}
-                            businessSettings={settings}
-                            onUpdateStatus={handleUpdateStatus}
-                            onCancelAppointment={(id) => handleUpdateStatus(id, AppointmentStatus.CANCELADO)}
-                            onDeleteAppointment={async (id) => { await supabase.from('appointments').delete().eq('id', id); fetchData(); }}
-                            onRefresh={async () => await fetchData()}
-                        />
-                    )}
-                    {activeTab === 'schedule' && (
-                        <Schedule 
-                            appointments={appointments}
-                            customers={customers}
-                            onAddAppointment={handleAddAppointment}
-                            onUpdateStatus={handleUpdateStatus}
-                            onCancelAppointment={(id) => handleUpdateStatus(id, AppointmentStatus.CANCELADO)}
-                            onDeleteAppointment={async (id) => { await supabase.from('appointments').delete().eq('id', id); fetchData(); }}
-                            settings={settings}
-                            services={services}
-                            serviceBays={serviceBays}
-                            onUpgrade={() => setActiveTab('settings')}
-                            currentPlan={settings.plan_type}
-                            onRefresh={async () => await fetchData()}
-                        />
-                    )}
-                    {activeTab === 'crm' && (
-                        <CRM 
-                            customers={customers}
-                            onAddCustomer={async (c) => { 
-                                const { data: { session } } = await supabase.auth.getSession();
-                                if (!session?.user) return;
-
-                                const { vehicles, ...customerData } = c;
-
-                                const { data: newCust, error } = await supabase.from('customers').insert({
-                                    business_id: settings?.id,
-                                    user_id: session.user.id, 
-                                    ...customerData
-                                }).select().single();
-                                
-                                if(!error && newCust && vehicles && vehicles.length > 0) {
-                                    await supabase.from('vehicles').insert({
-                                        customer_id: newCust.id,
-                                        brand: vehicles[0].brand,
-                                        model: vehicles[0].model,
-                                        plate: vehicles[0].plate,
-                                        type: 'CARRO'
-                                    });
-                                }
-
-                                if(!error) fetchData(); 
-                            }}
-                            onDeleteCustomer={async (id) => { await supabase.from('customers').delete().eq('id', id); fetchData(); }}
-                            businessSettings={settings}
-                            onUpdateSettings={async (s) => { 
-                                const { success } = await save('business_settings', s);
-                                if (success) fetchData();
-                            }}
-                        />
-                    )}
-                    {activeTab === 'finance' && (
-                        <FinancialModule 
-                             appointments={appointments}
-                             expenses={expenses}
-                             onAddExpense={async (e) => { 
-                                 await save('expenses', { ...e, business_id: settings.id }); 
-                                 fetchData(); 
-                             }}
-                             onDeleteExpense={async (id) => { await supabase.from('expenses').delete().eq('id', id); fetchData(); }}
-                             currentPlan={settings.plan_type || PlanType.START}
-                             onUpgrade={() => setActiveTab('settings')}
-                             businessId={settings.id}
-                        />
-                    )}
-                    {activeTab === 'marketing' && (
-                        <MarketingModule 
-                            portfolio={portfolio}
-                            onAddPortfolioItem={(item) => setPortfolio(prev => [item, ...prev])}
-                            onDeletePortfolioItem={async (id) => { await supabase.from('portfolio_items').delete().eq('id', id); fetchData(); }}
-                            reviews={reviews}
-                            onReplyReview={() => {}}
-                            currentPlan={settings.plan_type || PlanType.START}
-                            onUpgrade={() => setActiveTab('settings')}
-                            businessId={settings.id}
-                        />
-                    )}
-                    {activeTab === 'settings' && (
-                        <Settings 
-                            currentPlan={settings.plan_type || PlanType.START}
-                            onUpgrade={async (plan) => { 
-                                await save('business_settings', { id: settings.id, plan_type: plan }); 
-                                fetchData(); 
-                            }}
-                            settings={settings}
-                            onUpdateSettings={(s) => setSettings(s)}
-                            services={services}
-                            onAddService={async (s) => { 
-                                await save('services', { ...s, business_id: settings.id, is_active: true }); 
-                                fetchData(); 
-                            }}
-                            onDeleteService={async (id) => { await supabase.from('services').delete().eq('id', id); fetchData(); }}
-                        />
-                    )}
+                    {activeTab === 'dashboard' && <Dashboard currentPlan={settings.plan_type || PlanType.START} appointments={appointments} customers={customers} onUpgrade={() => setActiveTab('settings')} setActiveTab={setActiveTab} businessSettings={settings} onUpdateStatus={handleUpdateStatus} onCancelAppointment={(id) => handleUpdateStatus(id, AppointmentStatus.CANCELADO)} onDeleteAppointment={async (id) => { await supabase.from('appointments').delete().eq('id', id); fetchData(); }} onRefresh={async () => await fetchData()} />}
+                    {activeTab === 'schedule' && <Schedule appointments={appointments} customers={customers} onAddAppointment={handleAddAppointment} onUpdateStatus={handleUpdateStatus} onCancelAppointment={(id) => handleUpdateStatus(id, AppointmentStatus.CANCELADO)} onDeleteAppointment={async (id) => { await supabase.from('appointments').delete().eq('id', id); fetchData(); }} settings={settings} services={services} serviceBays={serviceBays} onUpgrade={() => setActiveTab('settings')} currentPlan={settings.plan_type} onRefresh={async () => await fetchData()} />}
+                    {activeTab === 'crm' && <CRM customers={customers} onAddCustomer={async (c) => { const { data: { session: s } } = await supabase.auth.getSession(); if (!s?.user) return; const { vehicles, ...customerData } = c; const { data: newCust, error } = await supabase.from('customers').insert({ business_id: settings?.id, user_id: s.user.id, ...customerData }).select().single(); if(!error && newCust && vehicles && vehicles.length > 0) { await supabase.from('vehicles').insert({ customer_id: newCust.id, brand: vehicles[0].brand, model: vehicles[0].model, plate: vehicles[0].plate, type: 'CARRO' }); } if(!error) fetchData(); }} onDeleteCustomer={async (id) => { await supabase.from('appointments').delete().eq('id', id); fetchData(); }} businessSettings={settings} onUpdateSettings={async (s) => { const { success } = await save('business_settings', s); if (success) fetchData(); }} />}
+                    {activeTab === 'finance' && <FinancialModule appointments={appointments} expenses={expenses} onAddExpense={async (e) => { await save('expenses', { ...e, business_id: settings.id }); fetchData(); }} onDeleteExpense={async (id) => { await supabase.from('expenses').delete().eq('id', id); fetchData(); }} currentPlan={settings.plan_type || PlanType.START} onUpgrade={() => setActiveTab('settings')} businessId={settings.id} />}
+                    {activeTab === 'marketing' && <MarketingModule portfolio={portfolio} onAddPortfolioItem={(item) => setPortfolio(prev => [item, ...prev])} onDeletePortfolioItem={async (id) => { await supabase.from('portfolio_items').delete().eq('id', id); fetchData(); }} reviews={reviews} onReplyReview={handleReplyReview} currentPlan={settings.plan_type || PlanType.START} onUpgrade={() => setActiveTab('settings')} businessId={settings.id} />}
+                    {activeTab === 'settings' && <Settings currentPlan={settings.plan_type || PlanType.START} onUpgrade={async (plan) => { await save('business_settings', { id: settings.id, plan_type: plan }); fetchData(); }} settings={settings} onUpdateSettings={(s) => setSettings(s)} services={services} onAddService={async (s) => { await save('services', { ...s, business_id: settings.id, is_active: true }); fetchData(); }} onDeleteService={async (id) => { await supabase.from('services').delete().eq('id', id); fetchData(); }} />}
                 </main>
             </SubscriptionGuard>
         </div>

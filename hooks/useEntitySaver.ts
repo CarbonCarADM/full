@@ -18,7 +18,8 @@ export function useEntitySaver() {
     setLoading(true);
     
     try {
-      const { created_at, updated_at, vehicles, operating_days, ...cleanPayload } = payload as any;
+      // Remove propriedades que são virtuais (normalizadas no frontend) ou tratadas via JSONB/Relacionamentos
+      const { created_at, updated_at, vehicles, operating_days, blocked_dates, ...cleanPayload } = payload as any;
 
       let result;
 

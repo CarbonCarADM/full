@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS public.business_settings (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 2.1 Tabela de Baias/Boxes (NOVO)
+-- 2.1 Tabela de Baias/Boxes
 CREATE TABLE IF NOT EXISTS public.service_bays (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     business_id UUID REFERENCES public.business_settings(id) ON DELETE CASCADE NOT NULL,
@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS public.service_bays (
 -- 3. Tabela de Clientes (CRM)
 CREATE TABLE IF NOT EXISTS public.customers (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL, -- Dono do registro
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL, -- Alterado para permitir NULL (leads anônimos)
     business_id UUID REFERENCES public.business_settings(id) ON DELETE CASCADE NOT NULL,
     name TEXT NOT NULL,
     phone TEXT,
@@ -71,7 +71,8 @@ CREATE TABLE IF NOT EXISTS public.customers (
     xp_points INTEGER DEFAULT 0,
     washes_count INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(business_id, phone)
 );
 
 -- 4. Tabela de Veículos
@@ -104,7 +105,7 @@ CREATE TABLE IF NOT EXISTS public.services (
 -- 6. Tabela de Agendamentos
 CREATE TABLE IF NOT EXISTS public.appointments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+    user_id UUID REFERENCES auth.users(id), -- Nullable para visitantes
     business_id UUID REFERENCES public.business_settings(id) ON DELETE CASCADE NOT NULL,
     customer_id UUID REFERENCES public.customers(id) ON DELETE CASCADE,
     vehicle_id UUID REFERENCES public.vehicles(id) ON DELETE SET NULL,
@@ -158,33 +159,10 @@ CREATE TABLE IF NOT EXISTS public.reviews (
 );
 
 -- =============================================================================
--- 9. AUTOMAÇÃO E SEGURANÇA (RLS)
+-- 9. SEGURANÇA (RLS)
 -- =============================================================================
 
--- Trigger de updated_at
-CREATE OR REPLACE FUNCTION handle_updated_at() RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS tr_business_updated ON business_settings;
-CREATE TRIGGER tr_business_updated BEFORE UPDATE ON business_settings FOR EACH ROW EXECUTE FUNCTION handle_updated_at();
-
-DROP TRIGGER IF EXISTS tr_customers_updated ON customers;
-CREATE TRIGGER tr_customers_updated BEFORE UPDATE ON customers FOR EACH ROW EXECUTE FUNCTION handle_updated_at();
-
-DROP TRIGGER IF EXISTS tr_services_updated ON services;
-CREATE TRIGGER tr_services_updated BEFORE UPDATE ON services FOR EACH ROW EXECUTE FUNCTION handle_updated_at();
-
-DROP TRIGGER IF EXISTS tr_appointments_updated ON appointments;
-CREATE TRIGGER tr_appointments_updated BEFORE UPDATE ON appointments FOR EACH ROW EXECUTE FUNCTION handle_updated_at();
-
-DROP TRIGGER IF EXISTS tr_expenses_updated ON expenses;
-CREATE TRIGGER tr_expenses_updated BEFORE UPDATE ON expenses FOR EACH ROW EXECUTE FUNCTION handle_updated_at();
-
--- Habilitar RLS
+-- Habilitar RLS em tudo
 ALTER TABLE business_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE service_bays ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
@@ -195,117 +173,71 @@ ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE portfolio_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
 
--- POLÍTICAS ADMIN (Usuários Autenticados - Donos da Estética)
-DROP POLICY IF EXISTS "Admin BS" ON business_settings;
-CREATE POLICY "Admin BS" ON business_settings FOR ALL TO authenticated USING (auth.uid() = user_id);
-
-DROP POLICY IF EXISTS "Admin Bays" ON service_bays;
-CREATE POLICY "Admin Bays" ON service_bays FOR ALL TO authenticated USING (
-    business_id IN (SELECT id FROM business_settings WHERE user_id = auth.uid())
-);
-
-DROP POLICY IF EXISTS "Admin Customers" ON customers;
-CREATE POLICY "Admin Customers" ON customers FOR ALL TO authenticated USING (user_id = auth.uid());
-
-DROP POLICY IF EXISTS "Admin Vehicles" ON vehicles;
-CREATE POLICY "Admin Vehicles" ON vehicles FOR ALL TO authenticated USING (
-    customer_id IN (SELECT id FROM customers WHERE user_id = auth.uid())
-);
-
+-- 9.1 POLÍTICAS PARA SERVICES
 DROP POLICY IF EXISTS "Admin Services" ON services;
 CREATE POLICY "Admin Services" ON services FOR ALL TO authenticated USING (user_id = auth.uid());
 
-DROP POLICY IF EXISTS "Admin Appointments" ON appointments;
-CREATE POLICY "Admin Appointments" ON appointments FOR ALL TO authenticated USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "Public View Services" ON services;
+CREATE POLICY "Public View Services" ON services FOR SELECT TO authenticated, anon USING (is_active = true);
 
+-- 9.2 POLÍTICAS PARA BUSINESS SETTINGS
+DROP POLICY IF EXISTS "Admin BS" ON business_settings;
+CREATE POLICY "Admin BS" ON business_settings FOR ALL TO authenticated USING (user_id = auth.uid());
+
+DROP POLICY IF EXISTS "Public View Business" ON business_settings;
+CREATE POLICY "Public View Business" ON business_settings FOR SELECT TO authenticated, anon USING (true);
+
+-- 9.3 POLÍTICAS PARA AGENDAMENTOS
+DROP POLICY IF EXISTS "Admin Appointments" ON appointments;
+CREATE POLICY "Admin Appointments" ON appointments FOR ALL TO authenticated USING (
+    business_id IN (SELECT id FROM business_settings WHERE user_id = auth.uid())
+);
+
+DROP POLICY IF EXISTS "Client Insert Appointment" ON appointments;
+CREATE POLICY "Client Insert Appointment" ON appointments FOR INSERT TO authenticated, anon WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Client View Own Appointments" ON appointments;
+CREATE POLICY "Client View Own Appointments" ON appointments FOR SELECT TO authenticated USING (
+    user_id = auth.uid() OR 
+    customer_id IN (SELECT id FROM customers WHERE email = (SELECT email FROM auth.users WHERE id = auth.uid()))
+);
+
+-- 9.4 POLÍTICAS PARA CLIENTES (Admin pode gerenciar todos do seu hangar)
+DROP POLICY IF EXISTS "Admin Customers" ON customers;
+CREATE POLICY "Admin Customers" ON customers FOR ALL TO authenticated USING (
+    business_id IN (SELECT id FROM business_settings WHERE user_id = auth.uid())
+);
+
+DROP POLICY IF EXISTS "Public Insert Customer" ON customers;
+CREATE POLICY "Public Insert Customer" ON customers FOR INSERT TO authenticated, anon WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Client View Own Customer Data" ON customers;
+CREATE POLICY "Client View Own Customer Data" ON customers FOR SELECT TO authenticated USING (
+    email = (SELECT email FROM auth.users WHERE id = auth.uid()) OR user_id = auth.uid()
+);
+
+-- 9.5 POLÍTICAS PARA VEÍCULOS
+DROP POLICY IF EXISTS "Admin Vehicles" ON vehicles;
+CREATE POLICY "Admin Vehicles" ON vehicles FOR ALL TO authenticated USING (
+    customer_id IN (SELECT id FROM customers WHERE business_id IN (SELECT id FROM business_settings WHERE user_id = auth.uid()))
+);
+
+DROP POLICY IF EXISTS "Public Insert Vehicle" ON vehicles;
+CREATE POLICY "Public Insert Vehicle" ON vehicles FOR INSERT TO authenticated, anon WITH CHECK (true);
+
+-- 9.6 PORTFÓLIO E REVIEWS
+DROP POLICY IF EXISTS "Public View Portfolio" ON portfolio_items;
+CREATE POLICY "Public View Portfolio" ON portfolio_items FOR SELECT TO authenticated, anon USING (true);
+
+DROP POLICY IF EXISTS "Public View Reviews" ON reviews;
+CREATE POLICY "Public View Reviews" ON reviews FOR SELECT TO authenticated, anon USING (true);
+
+DROP POLICY IF EXISTS "Public Insert Reviews" ON reviews;
+CREATE POLICY "Public Insert Reviews" ON reviews FOR INSERT TO authenticated, anon WITH CHECK (true);
+
+-- 9.7 OUTROS
 DROP POLICY IF EXISTS "Admin Expenses" ON expenses;
 CREATE POLICY "Admin Expenses" ON expenses FOR ALL TO authenticated USING (user_id = auth.uid());
 
-DROP POLICY IF EXISTS "Admin Portfolio" ON portfolio_items;
-CREATE POLICY "Admin Portfolio" ON portfolio_items FOR ALL TO authenticated USING (
-    business_id IN (SELECT id FROM business_settings WHERE user_id = auth.uid())
-);
-
-DROP POLICY IF EXISTS "Admin Reviews" ON reviews;
-CREATE POLICY "Admin Reviews" ON reviews FOR ALL TO authenticated USING (
-    business_id IN (SELECT id FROM business_settings WHERE user_id = auth.uid())
-);
-
--- POLÍTICAS PÚBLICAS (Usuários Anônimos - Booking)
-DROP POLICY IF EXISTS "Public View Business" ON business_settings;
-CREATE POLICY "Public View Business" ON business_settings FOR SELECT TO anon USING (true);
-
 DROP POLICY IF EXISTS "Public View Bays" ON service_bays;
-CREATE POLICY "Public View Bays" ON service_bays FOR SELECT TO anon USING (true);
-
-DROP POLICY IF EXISTS "Public View Services" ON services;
-CREATE POLICY "Public View Services" ON services FOR SELECT TO anon USING (is_active = true);
-
-DROP POLICY IF EXISTS "Public View Slots" ON appointments;
-CREATE POLICY "Public View Slots" ON appointments FOR SELECT TO anon USING (true);
-
-DROP POLICY IF EXISTS "Public Insert Appointment" ON appointments;
-CREATE POLICY "Public Insert Appointment" ON appointments FOR INSERT TO anon WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Public Insert Customer" ON customers;
-CREATE POLICY "Public Insert Customer" ON customers FOR INSERT TO anon WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Public Insert Vehicle" ON vehicles;
-CREATE POLICY "Public Insert Vehicle" ON vehicles FOR INSERT TO anon WITH CHECK (true);
-
--- NOVA POLÍTICA (CRÍTICA): Permitir que clientes autenticados vejam os dados do Hangar (Business Settings)
-DROP POLICY IF EXISTS "Authenticated View Business" ON business_settings;
-CREATE POLICY "Authenticated View Business" ON business_settings FOR SELECT TO authenticated USING (true);
-
-DROP POLICY IF EXISTS "Authenticated View Bays" ON service_bays;
-CREATE POLICY "Authenticated View Bays" ON service_bays FOR SELECT TO authenticated USING (true);
-
--- NOVA POLÍTICA (CRÍTICA): Permitir que clientes autenticados vejam a agenda de ocupação
-DROP POLICY IF EXISTS "Client View Slots" ON appointments;
-CREATE POLICY "Client View Slots" ON appointments FOR SELECT TO authenticated USING (true);
-
--- =============================================================================
--- 10. MIGRATIONS AUTOMÁTICAS (SAFE EXECUTION)
--- =============================================================================
-
-DO $$
-DECLARE
-    biz RECORD;
-    i INTEGER;
-BEGIN
-    -- 1. Popular Baias para negócios existentes (se não existirem)
-    FOR biz IN SELECT * FROM public.business_settings LOOP
-        -- Verifica se o negócio já tem baias
-        IF NOT EXISTS (SELECT 1 FROM public.service_bays WHERE business_id = biz.id) THEN
-            -- Cria baias baseado na capacidade
-            FOR i IN 1..(biz.box_capacity) LOOP
-                INSERT INTO public.service_bays (business_id, name) VALUES (biz.id, 'Box ' || i);
-            END LOOP;
-        END IF;
-    END LOOP;
-
-    -- 2. Migrar coluna box_id de INTEGER para UUID se necessário
-    -- Verifica se box_id ainda é INTEGER
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'appointments' AND column_name = 'box_id' AND data_type = 'integer'
-    ) THEN
-        -- Criar nova coluna UUID temporária
-        ALTER TABLE public.appointments ADD COLUMN box_id_new UUID REFERENCES public.service_bays(id) ON DELETE SET NULL;
-        
-        -- (Opcional) Aqui poderia haver lógica para mapear int -> uuid se necessário, 
-        -- mas como estamos criando baias novas, os agendamentos antigos ficarão com box NULL
-        -- para evitar inconsistência de dados.
-        
-        -- Dropar a coluna antiga (INTEGER)
-        ALTER TABLE public.appointments DROP COLUMN box_id;
-        
-        -- Renomear a nova coluna para box_id
-        ALTER TABLE public.appointments RENAME COLUMN box_id_new TO box_id;
-    END IF;
-
-    -- Garantir que a coluna box_id existe como UUID
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appointments' AND column_name = 'box_id') THEN
-        ALTER TABLE public.appointments ADD COLUMN box_id UUID REFERENCES public.service_bays(id) ON DELETE SET NULL;
-    END IF;
-END $$;
+CREATE POLICY "Public View Bays" ON service_bays FOR SELECT TO authenticated, anon USING (true);

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Lock, ChevronRight, ScanLine, ArrowRight, LogIn, UserPlus, ChevronLeft, Search } from 'lucide-react';
+import { Lock, ChevronRight, ScanLine, ArrowRight, LogIn, UserPlus, ChevronLeft, Search, ExternalLink } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface WelcomeScreenProps {
@@ -62,6 +62,15 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onSelectFlow }) =>
           </div>
 
           <div className="flex items-center gap-2">
+              {/* SHORTCUT FOR TESTING */}
+              <button 
+                onClick={() => window.location.href = '?studio=demo-studio'}
+                className="hidden md:flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 hover:border-red-500/50 hover:bg-red-500/10 transition-all group mr-2"
+              >
+                  <span className="text-[9px] font-bold text-zinc-400 group-hover:text-red-400 uppercase tracking-widest">Painel Cliente (Teste)</span>
+                  <ExternalLink size={12} className="text-zinc-500 group-hover:text-red-500" />
+              </button>
+
               {showSlugInput ? (
                   <form onSubmit={handleSlugAccess} className="flex items-center bg-white/[0.05] border border-white/10 rounded-full px-2 py-1 backdrop-blur-md animate-in slide-in-from-right-4">
                       <input 
