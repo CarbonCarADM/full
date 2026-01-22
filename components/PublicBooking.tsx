@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Check, ChevronLeft, Star, MapPin, Search, Zap, X, User, ArrowRight, Clock, Loader2, CalendarX, History, LayoutGrid, Bell, Phone, Filter, Instagram, Calendar as CalendarIcon, Wrench, Car, LogOut, Key, MessageSquare, Send, Image as ImageIcon, ThumbsUp, Lock, ArrowUpRight, Trophy, Reply, LogIn, UserPlus } from 'lucide-react';
+import { Check, ChevronLeft, Star, MapPin, Search, Zap, X, User, ArrowRight, Clock, Loader2, CalendarX, History, LayoutGrid, Bell, Phone, Filter, Instagram, Calendar as CalendarIcon, Wrench, Car, LogOut, Key, MessageSquare, Send, Image as ImageIcon, ThumbsUp, Lock, ArrowUpRight, Trophy, Reply, LogIn, UserPlus, AlertCircle } from 'lucide-react';
 import { BusinessSettings, ServiceItem, Appointment, PortfolioItem, Review } from '../types';
 import { cn, formatPhone, formatPlate } from '../lib/utils';
 import { supabase } from '../lib/supabaseClient';
@@ -67,6 +67,7 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
     const [agendaTab, setAgendaTab] = useState<'UPCOMING' | 'HISTORY'>('UPCOMING');
     const [galleryTab, setGalleryTab] = useState<'PHOTOS' | 'REVIEWS'>('PHOTOS');
     
+    const [searchTerm, setSearchTerm] = useState(''); // Estado para busca
     const [selectedService, setSelectedService] = useState<any>(null);
     const [selectedDate, setSelectedDate] = useState<string>('');
     const [selectedTime, setSelectedTime] = useState<string>(''); 
@@ -97,10 +98,72 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
     
     // Estado para controlar a exibição do Card de Login no Passo 2
     const [showAuthCard, setShowAuthCard] = useState(false);
+    
+    // Estado para o Modal de Resumo (Retomada de Agendamento)
+    const [pendingResume, setPendingResume] = useState<any>(null);
 
     const LockIcon = Lock as any;
 
-    // Detectar login durante o fluxo para avançar automaticamente
+    // Filtro de serviços baseado na busca
+    const filteredServices = services.filter(s => 
+        s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        (s.description && s.description.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+
+    // --- LÓGICA DE RECUPERAÇÃO DE SESSÃO (RESUME FLOW) ---
+    useEffect(() => {
+        // 1. Verifica se há um rascunho salvo no sessionStorage ao carregar
+        const savedDraft = sessionStorage.getItem('carbon_booking_draft');
+        
+        if (currentUser && savedDraft) {
+            try {
+                const draft = JSON.parse(savedDraft);
+                // Valida se o draft é recente (ex: menos de 24h) ou pertence ao business atual
+                setPendingResume(draft);
+            } catch (e) {
+                console.error("Erro ao ler rascunho", e);
+                sessionStorage.removeItem('carbon_booking_draft');
+            }
+        }
+    }, [currentUser]);
+
+    const saveDraft = () => {
+        if (selectedService && selectedDate && selectedTime) {
+            const draft = {
+                service: selectedService,
+                date: selectedDate,
+                time: selectedTime,
+                guestData: guestForm // Salva também o que foi digitado
+            };
+            sessionStorage.setItem('carbon_booking_draft', JSON.stringify(draft));
+        }
+    };
+
+    const confirmResume = () => {
+        if (!pendingResume) return;
+        
+        // Restaura o estado
+        setSelectedService(pendingResume.service);
+        setSelectedDate(pendingResume.date);
+        setSelectedTime(pendingResume.time);
+        
+        // Avança direto para Veículo (Passo 3)
+        setCurrentScreen('BOOKING');
+        setStep(3);
+        
+        // Limpa o modal e o storage
+        setPendingResume(null);
+        sessionStorage.removeItem('carbon_booking_draft');
+    };
+
+    const cancelResume = () => {
+        setPendingResume(null);
+        sessionStorage.removeItem('carbon_booking_draft');
+    };
+
+    // --- FIM LÓGICA RESUME ---
+
+    // Detectar login durante o fluxo para avançar automaticamente (Legado mantido para casos in-memory)
     useEffect(() => {
         if (currentUser && currentScreen === 'BOOKING' && step === 1 && selectedDate && selectedTime) {
             setStep(3); // Pula dados pessoais, vai direto para Veículo
@@ -280,7 +343,10 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
         };
 
         const success = await onBookingComplete(apt, customerData);
-        if (success) setStep(4);
+        if (success) {
+            setStep(4);
+            sessionStorage.removeItem('carbon_booking_draft'); // Limpa draft se houver
+        }
         setLoading(false);
     };
 
@@ -340,10 +406,84 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
 
     return (
         // Aplicando Spotlight (Radial Gradient) e Noise Texture no container principal
-        <div className="min-h-screen bg-[#020202] flex flex-col items-center font-sans bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 via-[#050505] to-black relative">
+        // Ajustado para um gradiente um pouco mais visível para evitar o "preto absoluto"
+        <div className="min-h-screen bg-[#020202] flex flex-col items-center font-sans bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-800/40 via-[#050505] to-black relative">
             
+            {/* CSS para Textura de Carbono no Cartão */}
+            <style>{`
+                .carbon-card-pattern {
+                    background-color: #0c0c0c;
+                    background-image: 
+                        linear-gradient(45deg, #151515 25%, transparent 25%, transparent 75%, #151515 75%, #151515),
+                        linear-gradient(45deg, #151515 25%, transparent 25%, transparent 75%, #151515 75%, #151515);
+                    background-position: 0 0, 10px 10px;
+                    background-size: 20px 20px;
+                }
+            `}</style>
+
             {/* Noise Texture Overlay */}
             <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] pointer-events-none" />
+
+            {/* --- MODAL DE RETOMADA DE AGENDAMENTO (RESUME) --- */}
+            <AnimatePresence>
+                {pendingResume && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+                        <motion.div 
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            className="bg-[#0c0c0c] border border-white/10 rounded-[2rem] w-full max-w-sm p-6 shadow-2xl relative"
+                        >
+                            <div className="flex flex-col items-center text-center space-y-4">
+                                <div className="w-16 h-16 bg-red-900/10 border border-red-600/20 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(220,38,38,0.2)]">
+                                    <History size={32} className="text-red-500" />
+                                </div>
+                                
+                                <div>
+                                    <h3 className="text-lg font-black text-white uppercase tracking-tight mb-2">Continuar Agendamento?</h3>
+                                    <p className="text-[10px] text-zinc-400 font-medium leading-relaxed">
+                                        Identificamos um serviço iniciado anteriormente. Deseja retomar?
+                                    </p>
+                                </div>
+
+                                <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-4 w-full">
+                                    <div className="flex justify-between items-center mb-1">
+                                        <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">Dia</span>
+                                        <span className="text-[10px] font-black text-white uppercase">
+                                            {new Date(pendingResume.date + 'T12:00:00').toLocaleDateString('pt-BR')}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between items-center mb-1">
+                                        <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">Hora</span>
+                                        <span className="text-[10px] font-black text-white">{pendingResume.time}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">Serviço</span>
+                                        <span className="text-[10px] font-black text-white uppercase truncate max-w-[150px]">
+                                            {pendingResume.service?.name}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-3 w-full pt-2">
+                                    <button 
+                                        onClick={cancelResume}
+                                        className="flex-1 py-3 text-[10px] font-black uppercase text-zinc-500 hover:text-white transition-colors"
+                                    >
+                                        Não, Cancelar
+                                    </button>
+                                    <button 
+                                        onClick={confirmResume}
+                                        className="flex-1 py-3 bg-white text-black rounded-xl text-[10px] font-black uppercase tracking-widest shadow-glow hover:bg-zinc-200 transition-all"
+                                    >
+                                        Sim, Continuar
+                                    </button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
 
             <div className="w-full max-w-md h-full md:h-[850px] md:my-auto md:rounded-[3rem] bg-[#020202]/50 border-x border-white/5 md:border border-white/5 relative shadow-2xl flex flex-col overflow-hidden backdrop-blur-sm z-10">
                 <div className="pt-10 md:pt-12 px-5 md:px-8 pb-4 flex justify-between items-center shrink-0 z-30 bg-transparent">
@@ -368,29 +508,46 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                 <div className="flex-1 overflow-y-auto custom-scrollbar pb-32 relative">
                     {currentScreen === 'HOME' && (
                         <div className="space-y-6 md:space-y-8 px-5 md:px-8">
-                            <div className="bg-[#121212] border border-white/5 rounded-2xl h-12 flex items-center px-4 gap-3 text-zinc-500"><Search size={16} /><input placeholder="Buscar serviço..." className="bg-transparent w-full h-full outline-none text-[10px] font-bold uppercase text-white placeholder:text-zinc-700" /></div>
+                            <div className="bg-[#121212] border border-white/5 rounded-2xl h-12 flex items-center px-4 gap-3 text-zinc-500 hover:border-white/20 transition-all">
+                                <Search size={16} />
+                                <input 
+                                    placeholder="Buscar serviço..." 
+                                    className="bg-transparent w-full h-full outline-none text-[10px] font-bold uppercase text-white placeholder:text-zinc-700" 
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                            </div>
                             
-                            {/* Business Card */}
-                            <div className="w-full aspect-[1.8/1] rounded-[2rem] relative group overflow-hidden border border-white/5 shadow-2xl">
-                                <div className="absolute inset-0 bg-[#050505]/80 backdrop-blur-xl z-10 flex flex-col justify-between p-5">
+                            {/* Business Card (Updated with Carbon Texture) */}
+                            <div className="w-full aspect-[1.8/1] rounded-[2rem] relative group overflow-hidden border border-white/10 shadow-2xl">
+                                {/* Carbon Pattern Background */}
+                                <div className="absolute inset-0 carbon-card-pattern opacity-80" />
+                                
+                                {/* Bottom Gradient Overlay */}
+                                <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/90 to-transparent z-0 pointer-events-none" />
+
+                                <div className="absolute inset-0 z-10 flex flex-col justify-between p-6">
                                     <div className="flex justify-between items-start relative z-20">
                                         <div className="flex items-center gap-4">
-                                            <div className="w-12 h-12 rounded-xl bg-zinc-900 border border-white/10 flex items-center justify-center overflow-hidden">{businessSettings.profile_image_url ? <img src={businessSettings.profile_image_url} className="w-full h-full object-cover" /> : <span className="text-xl font-black text-white">{businessSettings.business_name.charAt(0)}</span>}</div>
-                                            <div><h3 className="text-sm font-black text-white uppercase tracking-wider">{businessSettings.business_name}</h3><p className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest mt-0.5">Estética Automotiva</p></div>
+                                            <div className="w-12 h-12 rounded-xl bg-zinc-900/80 border border-white/10 flex items-center justify-center overflow-hidden backdrop-blur-sm shadow-lg">{businessSettings.profile_image_url ? <img src={businessSettings.profile_image_url} className="w-full h-full object-cover" /> : <span className="text-xl font-black text-white">{businessSettings.business_name.charAt(0)}</span>}</div>
+                                            <div>
+                                                <h3 className="text-sm font-black text-white uppercase tracking-wider drop-shadow-md">{businessSettings.business_name}</h3>
+                                                <p className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest mt-0.5">Estética Automotiva</p>
+                                            </div>
                                         </div>
-                                        <button onClick={handleOpenWhatsapp} className="w-10 h-10 rounded-full bg-green-900/20 border border-green-500/20 flex items-center justify-center text-green-500 hover:bg-green-500 hover:text-white transition-all"><Phone size={16} /></button>
+                                        <button onClick={handleOpenWhatsapp} className="w-10 h-10 rounded-full bg-green-900/30 border border-green-500/30 flex items-center justify-center text-green-500 hover:bg-green-500 hover:text-white transition-all backdrop-blur-sm"><Phone size={16} /></button>
                                     </div>
                                     <div className="relative z-20 space-y-2">
-                                        <div className="flex items-center gap-2 mb-1"><div className={cn("w-2 h-2 rounded-full animate-pulse", isOpenNow ? "bg-green-500" : "bg-red-500")} /><span className={cn("text-[9px] font-bold uppercase tracking-widest", isOpenNow ? "text-green-500" : "text-red-500")}>{isOpenNow ? "Aberto agora" : "Fechado"}</span></div>
-                                        <div className="flex items-center gap-2 text-zinc-400"><Instagram size={12} /><span className="text-[9px] font-bold uppercase">{businessSettings.configs?.instagram || '@carboncar'}</span></div>
-                                        <div className="flex items-start gap-2 text-zinc-400"><MapPin size={12} className="shrink-0 mt-0.5" /><span className="text-[9px] font-bold uppercase leading-tight">{businessSettings.address || 'Endereço não informado'}</span></div>
+                                        <div className="flex items-center gap-2 mb-1"><div className={cn("w-2 h-2 rounded-full animate-pulse", isOpenNow ? "bg-green-500" : "bg-red-500")} /><span className={cn("text-[9px] font-bold uppercase tracking-widest drop-shadow-sm", isOpenNow ? "text-green-500" : "text-red-500")}>{isOpenNow ? "Aberto agora" : "Fechado"}</span></div>
+                                        <div className="flex items-center gap-2 text-zinc-300"><Instagram size={12} /><span className="text-[9px] font-bold uppercase">{businessSettings.configs?.instagram || '@carboncar'}</span></div>
+                                        <div className="flex items-start gap-2 text-zinc-300"><MapPin size={12} className="shrink-0 mt-0.5" /><span className="text-[9px] font-bold uppercase leading-tight max-w-[90%]">{businessSettings.address || 'Endereço não informado'}</span></div>
                                     </div>
                                 </div>
                             </div>
 
                             {/* Studio Photos Card */}
-                            {businessSettings.configs?.studio_photos && businessSettings.configs.studio_photos.length > 0 && (
-                                <div className="w-full aspect-[1.5/1] rounded-[2rem] relative overflow-hidden border border-white/5 shadow-2xl bg-[#0c0c0c] group">
+                            {businessSettings.configs?.studio_photos && businessSettings.configs.studio_photos.length > 0 && !searchTerm && (
+                                <div className="w-full aspect-[1.5/1] rounded-[2rem] relative overflow-hidden border border-white/5 shadow-2xl bg-[#0c0c0c] group animate-in fade-in">
                                     <div className="absolute top-4 left-4 z-20 bg-black/50 backdrop-blur-md px-3 py-1 rounded-full border border-white/10">
                                         <p className="text-[8px] font-black uppercase text-white tracking-widest flex items-center gap-1">
                                             <ImageIcon size={10} /> O Espaço
@@ -414,7 +571,34 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                                 </div>
                             )}
 
-                            <div><h3 className="text-sm font-black text-white uppercase mb-4 pl-1">Serviços</h3><div className="grid grid-cols-2 gap-3">{services.map((s) => <button key={s.id} onClick={() => { setSelectedService(s); setCurrentScreen('BOOKING'); setStep(1); }} className="bg-[#121212] border border-white/5 p-4 rounded-[1.5rem] flex flex-col justify-between h-[130px] hover:border-red-600/30 transition-all group"><div className="flex justify-between w-full"><div className="w-8 h-8 rounded-lg bg-zinc-900 flex items-center justify-center group-hover:bg-red-600 transition-colors"><Zap size={14} className="text-white" /></div><p className="text-xs font-black text-white">R$ {Number(s.price).toFixed(0)}</p></div><div className="text-left"><h4 className="text-[10px] font-black text-white uppercase line-clamp-2">{s.name}</h4><div className="flex items-center gap-1 mt-1 text-zinc-500"><Clock size={10} /><span className="text-[8px] font-bold uppercase">{formatDuration(s.duration_minutes)}</span></div></div></button>)}</div></div>
+                            <div>
+                                <h3 className="text-sm font-black text-white uppercase mb-4 pl-1">
+                                    {searchTerm ? 'Resultados da Busca' : 'Serviços'}
+                                </h3>
+                                <div className="grid grid-cols-2 gap-3">
+                                    {filteredServices.length > 0 ? filteredServices.map((s) => (
+                                        <button key={s.id} onClick={() => { setSelectedService(s); setCurrentScreen('BOOKING'); setStep(1); }} className="bg-[#121212] border border-white/5 p-4 rounded-[1.5rem] flex flex-col justify-between h-[130px] hover:border-red-600/30 transition-all group">
+                                            <div className="flex justify-between w-full">
+                                                <div className="w-8 h-8 rounded-lg bg-zinc-900 flex items-center justify-center group-hover:bg-red-600 transition-colors">
+                                                    <Zap size={14} className="text-white" />
+                                                </div>
+                                                <p className="text-xs font-black text-white">R$ {Number(s.price).toFixed(0)}</p>
+                                            </div>
+                                            <div className="text-left">
+                                                <h4 className="text-[10px] font-black text-white uppercase line-clamp-2">{s.name}</h4>
+                                                <div className="flex items-center gap-1 mt-1 text-zinc-500">
+                                                    <Clock size={10} />
+                                                    <span className="text-[8px] font-bold uppercase">{formatDuration(s.duration_minutes)}</span>
+                                                </div>
+                                            </div>
+                                        </button>
+                                    )) : (
+                                        <div className="col-span-2 py-10 text-center text-zinc-500 text-[10px] font-bold uppercase">
+                                            Nenhum serviço encontrado
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     )}
 
@@ -449,14 +633,6 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                                 </div>)}</div></div>
                             )}
                         </div>
-                    )}
-
-                    {currentScreen === 'AGENDA' && (
-                        <div className="px-5 md:px-8"><div className="flex bg-[#121212] p-1 rounded-xl border border-white/5 mb-6"><button onClick={() => setAgendaTab('UPCOMING')} className={cn("flex-1 py-2.5 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all", agendaTab === 'UPCOMING' ? "bg-white text-black shadow-lg" : "text-zinc-500 hover:text-white")}>Em Breve</button><button onClick={() => setAgendaTab('HISTORY')} className={cn("flex-1 py-2.5 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all", agendaTab === 'HISTORY' ? "bg-white text-black shadow-lg" : "text-zinc-500 hover:text-white")}>Histórico</button></div><div className="space-y-3">{!currentUser ? <div className="text-center py-20"><LockIcon size={32} className="text-zinc-700 mx-auto mb-4" /><p className="text-zinc-500 text-[10px] font-bold uppercase mb-4">Faça login para ver sua agenda</p><button onClick={onLoginRequest} className="px-6 py-3 bg-white text-black rounded-xl text-[9px] font-black uppercase tracking-widest">Entrar</button></div> : (agendaTab === 'UPCOMING' ? upcomingAppointments : historyAppointments).length === 0 ? <div className="text-center py-20 opacity-40"><CalendarX size={32} className="text-zinc-600 mx-auto mb-4" /><p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Nenhum agendamento</p></div> : (agendaTab === 'UPCOMING' ? upcomingAppointments : historyAppointments).map((apt: Appointment) => <div key={apt.id} className="bg-[#121212] p-4 rounded-[1.2rem] border border-white/5 flex flex-col gap-3"><div className="flex justify-between items-start"><div><div className="flex items-center gap-2 mb-1"><div className={cn("w-1.5 h-1.5 rounded-full", apt.status === 'CONFIRMADO' ? "bg-white shadow-[0_0_5px_white]" : apt.status === 'EM_EXECUCAO' ? "bg-red-600 animate-pulse" : "bg-zinc-700")} /><p className="text-[9px] font-black text-white uppercase tracking-wide">{new Date(apt.date + 'T12:00:00').toLocaleDateString('pt-BR')} às {apt.time}</p></div><p className="text-xs font-black text-white uppercase">{apt.serviceType}</p></div><span className={cn("text-[8px] font-bold px-2 py-1 rounded border uppercase tracking-widest", apt.status === 'FINALIZADO' ? "bg-green-500/10 text-green-500 border-green-500/20" : "text-zinc-500 bg-zinc-900 border-white/5")}>{apt.status}</span></div></div>)}</div></div>
-                    )}
-
-                    {currentScreen === 'PROFILE' && (
-                        <div className="px-5 md:px-8 space-y-6">{currentUser ? (<><div className="bg-[#121212] p-6 rounded-[2rem] border border-white/5 flex flex-col items-center text-center relative overflow-hidden"><div className="w-20 h-20 bg-zinc-900 rounded-full flex items-center justify-center text-zinc-500 border-4 border-[#121212] relative z-10 shadow-xl mb-4"><User size={28} /></div><h3 className="text-lg font-black text-white uppercase tracking-tight">{currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0]}</h3><p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest mb-6">{currentUser.email}</p>{businessSettings.loyalty_program_enabled && businessSettings.plan_type !== 'START' && <div className="w-full max-w-xs mb-4"><div className="flex justify-between items-center mb-2"><div className="flex items-center gap-2"><Trophy size={14} className="text-yellow-500" /><span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Nível Fidelidade</span></div><span className="text-xs font-black text-white">{servicesCount % 10} / 10</span></div><div className="h-2 bg-zinc-800 rounded-full overflow-hidden border border-white/5 relative"><div className="h-full bg-gradient-to-r from-yellow-600 to-yellow-500 shadow-[0_0_10px_rgba(234,179,8,0.5)] transition-all duration-1000" style={{ width: `${(servicesCount % 10) * 10}%` }} /></div></div>}</div><div className="grid grid-cols-2 gap-3"><div className="bg-[#121212] p-4 rounded-[1.5rem] border border-white/5"><div className="flex items-center gap-2 mb-2"><Wrench size={12} className="text-white" /><span className="text-[8px] font-black text-zinc-500 uppercase">Serviços</span></div><p className="text-xl font-black text-white pl-1">{servicesCount}</p></div><div className="bg-[#121212] p-4 rounded-[1.5rem] border border-white/5"><div className="flex items-center gap-2 mb-2"><Car size={12} className="text-red-500" /><span className="text-[8px] font-black text-zinc-500 uppercase">Veículo</span></div><p className="text-xs font-black text-white pl-1 uppercase leading-tight truncate">{userVehicle}</p></div></div><button onClick={onExit} className="w-full py-4 bg-red-900/10 border border-red-600/20 rounded-xl text-[9px] font-black uppercase text-red-500 hover:bg-red-600 hover:text-white transition-all flex items-center justify-center gap-2"><LogOut size={14} /> Sair da Conta</button></>) : <div className="text-center py-20"><p className="text-zinc-500 text-[10px] font-bold uppercase mb-4">Você está navegando como visitante</p><button onClick={onLoginRequest} className="px-6 py-3 bg-white text-black rounded-xl text-[9px] font-black uppercase tracking-widest">Fazer Login</button></div>}</div>
                     )}
 
                     {currentScreen === 'BOOKING' && (
@@ -502,13 +678,13 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
 
                                                     <div className="flex gap-3 w-full pt-2">
                                                         <button 
-                                                            onClick={onLoginRequest}
+                                                            onClick={() => { saveDraft(); onLoginRequest && onLoginRequest(); }}
                                                             className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-[9px] font-black uppercase tracking-widest border border-white/5 transition-all flex items-center justify-center gap-2"
                                                         >
                                                             <LogIn size={12} /> Entrar
                                                         </button>
                                                         <button 
-                                                            onClick={() => onRegisterRequest && onRegisterRequest(guestForm)}
+                                                            onClick={() => { saveDraft(); onRegisterRequest && onRegisterRequest(guestForm); }}
                                                             className="flex-1 py-3 bg-white text-black hover:bg-zinc-200 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-glow transition-all flex items-center justify-center gap-2"
                                                         >
                                                             <UserPlus size={12} /> Criar Conta
@@ -542,7 +718,7 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                                                 Crie sua conta agora para receber atualizações, ver o histórico e acumular pontos de fidelidade.
                                             </p>
                                             <button 
-                                                onClick={() => onRegisterRequest && onRegisterRequest({ name: guestForm.name, phone: guestForm.phone })} 
+                                                onClick={() => { saveDraft(); onRegisterRequest && onRegisterRequest({ name: guestForm.name, phone: guestForm.phone }); }} 
                                                 className="w-full py-4 bg-white text-black rounded-xl font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 hover:bg-zinc-200 transition-all shadow-glow hover:scale-[1.02] active:scale-[0.98]"
                                             >
                                                 Criar Minha Conta <ArrowUpRight size={14} />
