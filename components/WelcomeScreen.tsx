@@ -18,24 +18,79 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onSelectFlow }) =>
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#000000] flex flex-col font-sans relative overflow-hidden selection:bg-red-900 selection:text-white">
+    <div className="min-h-screen bg-[#050505] flex flex-col font-sans relative overflow-hidden selection:bg-red-900 selection:text-white">
       
-      {/* --- CINEMATIC BACKGROUND --- */}
+      {/* --- ESTILOS PARA ANIMAÇÃO DE PARTÍCULAS (INLINE PARA NÃO ALTERAR CONFIG GLOBAL) --- */}
+      <style>{`
+        @keyframes float-particle {
+          0% { transform: translateY(0) translateX(0); opacity: 0; }
+          20% { opacity: 0.5; }
+          80% { opacity: 0.5; }
+          100% { transform: translateY(-100vh) translateX(20px); opacity: 0; }
+        }
+        .particle {
+          position: absolute;
+          background: white;
+          border-radius: 50%;
+          opacity: 0;
+          animation: float-particle linear infinite;
+        }
+        .carbon-pattern {
+            background-color: #050505;
+            background-image: 
+                linear-gradient(27deg, #09090b 50%, transparent 50%),
+                linear-gradient(207deg, #09090b 50%, transparent 50%),
+                linear-gradient(127deg, #0f0f10 50%, transparent 50%),
+                linear-gradient(307deg, #0f0f10 50%, transparent 50%);
+            background-size: 8px 8px;
+        }
+      `}</style>
+
+      {/* --- BACKGROUND LAYERS --- */}
       
-      {/* 1. Texture Layer (Noise) */}
-      <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.04] pointer-events-none z-20" />
-      
-      {/* 2. Image Layer (Abstract Car Detail) - Highly Faded */}
-      <div className="absolute inset-0 z-0">
-          <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1617788138017-80ad40651399?q=80&w=2070&auto=format&fit=crop')] bg-cover bg-center opacity-20 scale-105" />
-          {/* Heavy Gradients to ensure text readability and focus */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/90 to-black/40" />
-          <div className="absolute inset-0 bg-gradient-to-r from-black via-black/80 to-transparent" />
+      {/* 1. Carbon Texture */}
+      <div className="absolute inset-0 carbon-pattern opacity-40 z-0 pointer-events-none" />
+
+      {/* 2. Radial Gradient (Vignette/Spotlight Depth) */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-zinc-900/0 via-[#000000]/60 to-[#000000] z-0 pointer-events-none" />
+
+      {/* 3. Floating Particles */}
+      <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden">
+          {/* Gerando partículas manualmente com delays variados */}
+          {[...Array(15)].map((_, i) => (
+              <div 
+                key={i}
+                className="particle bg-red-500"
+                style={{
+                    left: `${Math.random() * 100}%`,
+                    bottom: '-10px',
+                    width: `${Math.random() * 3 + 1}px`,
+                    height: `${Math.random() * 3 + 1}px`,
+                    animationDuration: `${Math.random() * 10 + 10}s`,
+                    animationDelay: `${Math.random() * 5}s`,
+                    opacity: 0.3
+                }}
+              />
+          ))}
+          {[...Array(10)].map((_, i) => (
+              <div 
+                key={`w-${i}`}
+                className="particle bg-white"
+                style={{
+                    left: `${Math.random() * 100}%`,
+                    bottom: '-10px',
+                    width: `${Math.random() * 2 + 1}px`,
+                    height: `${Math.random() * 2 + 1}px`,
+                    animationDuration: `${Math.random() * 15 + 15}s`,
+                    animationDelay: `${Math.random() * 10}s`,
+                    opacity: 0.1
+                }}
+              />
+          ))}
       </div>
 
-      {/* 3. Volumetric Lighting (The "Soul" of the design) */}
-      <div className="absolute bottom-[-10%] left-[-10%] w-[50vw] h-[50vw] bg-red-900/20 blur-[180px] rounded-full pointer-events-none z-10 mix-blend-screen animate-pulse-fast" />
-      <div className="absolute top-[-10%] right-[-10%] w-[40vw] h-[40vw] bg-zinc-900/10 blur-[150px] rounded-full pointer-events-none z-10" />
+      {/* 4. Volumetric Lighting (Glow Sutil) */}
+      <div className="absolute top-[-20%] left-[-10%] w-[70vw] h-[70vw] bg-red-900/10 blur-[150px] rounded-full pointer-events-none z-10 mix-blend-screen" />
 
       {/* --- HUD HEADER --- */}
       <header className="relative z-30 w-full p-8 md:p-10 flex justify-between items-center animate-in slide-in-from-top-10 duration-1000 fade-in">
@@ -67,19 +122,19 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onSelectFlow }) =>
       <main className="relative z-30 flex-1 flex flex-col justify-center px-8 md:px-20 lg:px-32 pb-20">
          
          <div className={cn(
-             "max-w-4xl transition-all duration-1000 ease-out", // Reduced max-width for zoom-out feel
+             "max-w-4xl transition-all duration-1000 ease-out", 
              booting ? "opacity-0 translate-y-10 blur-sm" : "opacity-100 translate-y-0 blur-0"
          )}>
             
             {/* TAGLINE */}
             <div className="flex items-center gap-4 mb-6 overflow-hidden">
-                <div className="h-px w-10 bg-red-600" />
-                <p className="text-red-500 font-bold text-[10px] md:text-xs tracking-[0.4em] uppercase">
+                <div className="h-px w-10 bg-red-600 shadow-[0_0_10px_#dc2626]" />
+                <p className="text-red-500 font-bold text-[10px] md:text-xs tracking-[0.4em] uppercase text-shadow-glow">
                     Automotive Intelligence
                 </p>
             </div>
 
-            {/* HERO TITLE - UPDATED TEXT & SCALED DOWN */}
+            {/* HERO TITLE */}
             <h1 className="text-4xl md:text-6xl lg:text-7xl font-black text-white leading-[0.95] tracking-tighter mb-8 drop-shadow-2xl">
                 DETALHES QUE <br/>
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-zinc-500 via-zinc-200 to-zinc-600">DEFINEM A PERFEIÇÃO.</span>
@@ -121,7 +176,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onSelectFlow }) =>
                          <div className="grid gap-2">
                              <button 
                                 onClick={() => onSelectFlow('CLIENT', 'LOGIN')}
-                                className="w-full p-4 bg-[#0a0a0a] hover:bg-[#111] border border-white/10 hover:border-red-600/50 rounded-xl group transition-all duration-300 flex items-center justify-between backdrop-blur-md shadow-2xl relative overflow-hidden"
+                                className="w-full p-4 bg-[#0a0a0a]/80 hover:bg-[#111] border border-white/10 hover:border-red-600/50 rounded-xl group transition-all duration-300 flex items-center justify-between backdrop-blur-md shadow-2xl relative overflow-hidden"
                              >
                                  <div className="absolute inset-0 bg-gradient-to-r from-red-600/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                                  <div className="relative flex items-center gap-4">
@@ -138,7 +193,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onSelectFlow }) =>
 
                              <button 
                                 onClick={() => onSelectFlow('CLIENT', 'REGISTER')}
-                                className="w-full p-4 bg-transparent hover:bg-white/5 border border-white/5 hover:border-white/20 rounded-xl group transition-all duration-300 flex items-center justify-between"
+                                className="w-full p-4 bg-zinc-900/30 hover:bg-white/5 border border-white/5 hover:border-white/20 rounded-xl group transition-all duration-300 flex items-center justify-between backdrop-blur-sm"
                              >
                                  <div className="flex items-center gap-4">
                                      <div className="w-10 h-10 rounded-lg bg-zinc-900 border border-white/5 flex items-center justify-center group-hover:scale-110 transition-transform">

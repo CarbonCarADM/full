@@ -437,27 +437,41 @@ function App() {
   }
 
   // PRIORITY 2: Public Booking Interface (Guest or Client)
+  // Modified to Render AuthScreen as an Overlay if needed, keeping PublicBooking mounted
   if ((publicSlug || session?.user?.user_metadata?.role === 'CLIENT') && settings) {
       return (
-        <PublicBooking 
-            currentUser={session?.user}
-            businessSettings={settings}
-            services={services}
-            existingAppointments={appointments}
-            portfolio={portfolio}
-            reviews={reviews}
-            onBookingComplete={async (apt, newCustomer) => {
-                await handleAddAppointment(apt, newCustomer, true); 
-                return true;
-            }}
-            onExit={() => {
-                supabase.auth.signOut();
-                setPublicSlug(null);
-                window.location.href = '/';
-            }}
-            onLoginRequest={() => { setAuthRole('CLIENT'); setShowAuth(true); }}
-            onRegisterRequest={(data) => { setAuthRole('CLIENT'); setPreFillAuth(data); setShowAuth(true); }}
-        />
+        <>
+            <PublicBooking 
+                currentUser={session?.user}
+                businessSettings={settings}
+                services={services}
+                existingAppointments={appointments}
+                portfolio={portfolio}
+                reviews={reviews}
+                onBookingComplete={async (apt, newCustomer) => {
+                    await handleAddAppointment(apt, newCustomer, true); 
+                    return true;
+                }}
+                onExit={() => {
+                    supabase.auth.signOut();
+                    setPublicSlug(null);
+                    window.location.href = '/';
+                }}
+                onLoginRequest={() => { setAuthRole('CLIENT'); setShowAuth(true); }}
+                onRegisterRequest={(data) => { setAuthRole('CLIENT'); setPreFillAuth(data); setShowAuth(true); }}
+            />
+            
+            {showAuth && !session && (
+                <div className="fixed inset-0 z-[250] bg-black animate-in fade-in duration-300">
+                    <AuthScreen 
+                        role="CLIENT"
+                        onLogin={() => { setShowAuth(false); fetchData(); }} 
+                        onBack={() => setShowAuth(false)} 
+                        preFillData={preFillAuth} 
+                    />
+                </div>
+            )}
+        </>
       );
   }
 

@@ -419,6 +419,9 @@ export const Settings: React.FC<SettingsProps> = ({
                      {(Object.keys(PLAN_FEATURES) as PlanType[]).map(plan => {
                          const f = PLAN_FEATURES[plan];
                          const isActive = currentPlan === plan;
+                         // Pega o link de checkout correto (se existir) para o ciclo de pagamento selecionado
+                         const checkoutLink = billingCycle === 'MONTHLY' ? f.stripeLinkMonthly : f.stripeLinkAnnual;
+
                          return (
                              <div key={plan} className={cn("p-8 rounded-[2.5rem] border flex flex-col transition-all relative overflow-hidden", isActive ? "bg-zinc-900 border-red-600/50" : "bg-[#09090b] border-white/5")}>
                                  {isActive && <div className="absolute top-4 right-4"><Check className="text-red-600" /></div>}
@@ -432,7 +435,26 @@ export const Settings: React.FC<SettingsProps> = ({
                                      )}
                                  </div>
                                  <ul className="space-y-4 mb-10 flex-1">{f.features.map((feat, idx) => (<li key={idx} className="flex items-center gap-3 text-[10px] font-bold text-zinc-300 uppercase tracking-wide"><div className="w-1.5 h-1.5 rounded-full bg-red-600" /> {feat}</li>))}</ul>
-                                 <button onClick={() => onUpgrade(plan)} disabled={isActive} className={cn("w-full py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", isActive ? "bg-red-600/10 text-red-500 cursor-default" : "bg-white text-black hover:bg-zinc-200 active:scale-95")}>{isActive ? "Plano Atual" : "Upgrade de Hangar"}</button>
+                                 
+                                 {/* Botão de Ação: Se ativo, desabilitado. Se não, abre link de checkout ou executa fallback */}
+                                 <button 
+                                    onClick={() => {
+                                        if (checkoutLink) {
+                                            window.open(checkoutLink, '_blank');
+                                        } else {
+                                            onUpgrade(plan);
+                                        }
+                                    }} 
+                                    disabled={isActive} 
+                                    className={cn(
+                                        "w-full py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", 
+                                        isActive 
+                                            ? "bg-red-600/10 text-red-500 cursor-default" 
+                                            : "bg-white text-black hover:bg-zinc-200 active:scale-95"
+                                    )}
+                                >
+                                    {isActive ? "Plano Atual" : "Upgrade de Hangar"}
+                                </button>
                              </div>
                          )
                      })}

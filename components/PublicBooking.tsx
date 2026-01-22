@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Check, ChevronLeft, Star, MapPin, Search, Zap, X, User, ArrowRight, Clock, Loader2, CalendarX, History, LayoutGrid, Bell, Phone, Filter, Instagram, Calendar as CalendarIcon, Wrench, Car, LogOut, Key, MessageSquare, Send, Image as ImageIcon, ThumbsUp, Lock, ArrowUpRight, Trophy, Reply, LogIn, Mail } from 'lucide-react';
+import { Check, ChevronLeft, Star, MapPin, Search, Zap, X, User, ArrowRight, Clock, Loader2, CalendarX, History, LayoutGrid, Bell, Phone, Filter, Instagram, Calendar as CalendarIcon, Wrench, Car, LogOut, Key, MessageSquare, Send, Image as ImageIcon, ThumbsUp, Lock, ArrowUpRight, Trophy, Reply, LogIn, UserPlus } from 'lucide-react';
 import { BusinessSettings, ServiceItem, Appointment, PortfolioItem, Review } from '../types';
 import { cn, formatPhone, formatPlate } from '../lib/utils';
 import { supabase } from '../lib/supabaseClient';
@@ -15,8 +15,8 @@ interface PublicBookingProps {
     reviews?: Review[];
     onBookingComplete: (apt: Appointment, newCustomer?: any) => Promise<boolean>;
     onExit: () => void;
-    onLoginRequest?: () => void; // Mantido para compatibilidade, mas não usado no fluxo principal
-    onRegisterRequest?: (data: { name: string, phone: string }) => void; // Mantido para compatibilidade
+    onLoginRequest?: () => void;
+    onRegisterRequest?: (data: { name: string, phone: string }) => void;
 }
 
 interface CalendarDay {
@@ -70,16 +70,8 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
     const [selectedService, setSelectedService] = useState<any>(null);
     const [selectedDate, setSelectedDate] = useState<string>('');
     const [selectedTime, setSelectedTime] = useState<string>(''); 
-    
-    // Form States
     const [guestForm, setGuestForm] = useState({ name: '', phone: '' });
     const [vehicleForm, setVehicleForm] = useState({ brand: '', model: '', plate: '' });
-    
-    // Inline Auth State
-    const [showAuthCard, setShowAuthCard] = useState(false);
-    const [authMode, setAuthMode] = useState<'REGISTER' | 'LOGIN'>('REGISTER');
-    const [authData, setAuthData] = useState({ email: '', password: '' });
-    const [authError, setAuthError] = useState<string | null>(null);
     
     const [viewDate, setViewDate] = useState(new Date());
     const [calendarDays, setCalendarDays] = useState<CalendarDay[]>([]);
@@ -103,23 +95,24 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
 
     const [isOpenNow, setIsOpenNow] = useState(false);
     
-    // Carousel State
-    const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+    // Estado para controlar a exibição do Card de Login no Passo 2
+    const [showAuthCard, setShowAuthCard] = useState(false);
 
     const LockIcon = Lock as any;
 
     // Detectar login durante o fluxo para avançar automaticamente
     useEffect(() => {
-        if (currentUser && currentScreen === 'BOOKING') {
-            if (showAuthCard) {
-                setShowAuthCard(false); // Fecha o card se logar
-                setStep(3); // Vai para veículo
-            } else if (step === 1 && selectedDate && selectedTime) {
-                // Se já estiver logado no passo 1, pula o 2 e vai pro 3
-                setStep(3);
-            }
+        if (currentUser && currentScreen === 'BOOKING' && step === 1 && selectedDate && selectedTime) {
+            setStep(3); // Pula dados pessoais, vai direto para Veículo
+        } else if (currentUser && currentScreen === 'BOOKING' && step === 2) {
+            setStep(3); // Se logou no passo 2, avança
         }
-    }, [currentUser, currentScreen, step, selectedDate, selectedTime, showAuthCard]);
+    }, [currentUser, currentScreen, step, selectedDate, selectedTime]);
+
+    // Resetar o estado do card se mudar de passo ou tela
+    useEffect(() => {
+        setShowAuthCard(false);
+    }, [step, currentScreen]);
 
     useEffect(() => {
         const checkOpenStatus = () => {
@@ -136,27 +129,6 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
         const interval = setInterval(checkOpenStatus, 60000);
         return () => clearInterval(interval);
     }, [businessSettings]);
-
-    // Auto-slide effect for Studio Photos
-    useEffect(() => {
-        if (!businessSettings.configs?.studio_photos || businessSettings.configs.studio_photos.length <= 1) return;
-        
-        const timer = setInterval(() => {
-            setCurrentPhotoIndex(prev => (prev + 1) % (businessSettings.configs?.studio_photos?.length || 1));
-        }, 5000);
-
-        return () => clearInterval(timer);
-    }, [businessSettings.configs?.studio_photos]);
-
-    const nextPhoto = () => {
-        if (!businessSettings.configs?.studio_photos) return;
-        setCurrentPhotoIndex(prev => (prev + 1) % businessSettings.configs.studio_photos.length);
-    };
-
-    const prevPhoto = () => {
-        if (!businessSettings.configs?.studio_photos) return;
-        setCurrentPhotoIndex(prev => (prev === 0 ? businessSettings.configs.studio_photos.length - 1 : prev - 1));
-    };
 
     // Função de carregamento de dados realocada para ser reutilizável
     const fetchRealData = async () => {
@@ -261,59 +233,28 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
         setSelectedTime('');
     }, [selectedDate, businessSettings]);
 
-    const handleContinueFromTime = () => {
-        if (!selectedDate || !selectedTime) return;
-        
-        if (currentUser) {
-            setStep(3); // Se já logado, vai para Veículo (3)
-        } else {
-            setStep(2); // Se não, vai para Dados Pessoais (2)
-        }
-    };
-
-    const handleContinueFromGuestForm = () => {
-        if (!guestForm.name || !guestForm.phone) return alert("Por favor, preencha todos os campos.");
-        
-        // Se já tiver logado (improvável de chegar aqui, mas ok), avança
-        if (currentUser) {
-            setStep(3);
-        } else {
-            // Se não logado, abre o card de Auth inline
-            setShowAuthCard(true);
-        }
-    };
-
-    const handleInlineAuth = async () => {
-        if (!authData.email || !authData.password) return;
-        setLoading(true);
-        setAuthError(null);
-
-        try {
-            if (authMode === 'REGISTER') {
-                const { data, error } = await supabase.auth.signUp({
-                    email: authData.email,
-                    password: authData.password,
-                    options: {
-                        data: {
-                            full_name: guestForm.name,
-                            phone: guestForm.phone,
-                            role: 'CLIENT'
-                        }
-                    }
-                });
-                if (error) throw error;
-                // Sucesso no registro (App.tsx vai detectar session change e atualizar currentUser)
-                // O useEffect lá em cima vai capturar o currentUser e fechar o card/avançar
+    const handleContinueAction = () => {
+        if (step === 1) {
+            if (!selectedDate || !selectedTime) return;
+            if (currentUser) {
+                setStep(3);
             } else {
-                const { data, error } = await supabase.auth.signInWithPassword({
-                    email: authData.email,
-                    password: authData.password
-                });
-                if (error) throw error;
+                setStep(2);
             }
-        } catch (err: any) {
-            setAuthError(err.message || "Erro na autenticação.");
-            setLoading(false);
+        } else if (step === 2) {
+            // Se já logado, avança
+            if (currentUser) {
+                setStep(3);
+                return;
+            }
+            // Se não logado, valida campos e mostra o card de auth
+            if (!guestForm.name || !guestForm.phone || guestForm.phone.length < 10) {
+                alert("Por favor, preencha seus dados corretamente.");
+                return;
+            }
+            setShowAuthCard(true);
+        } else if (step === 3) {
+            handleFinalize();
         }
     };
 
@@ -398,11 +339,16 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
     if (!businessSettings.id) return <div className="min-h-screen bg-[#020202] flex items-center justify-center font-sans p-4"><Loader2 className="w-8 h-8 text-red-600 animate-spin" /></div>;
 
     return (
-        <div className="min-h-screen bg-[#020202] flex flex-col items-center font-sans">
-            <div className="w-full max-w-md h-full md:h-[850px] md:my-auto md:rounded-[3rem] bg-[#020202] border-x border-white/5 md:border border-white/5 relative shadow-2xl flex flex-col overflow-hidden">
-                <div className="pt-10 md:pt-12 px-5 md:px-8 pb-4 flex justify-between items-center shrink-0 z-30 bg-[#020202]/95 backdrop-blur-sm">
+        // Aplicando Spotlight (Radial Gradient) e Noise Texture no container principal
+        <div className="min-h-screen bg-[#020202] flex flex-col items-center font-sans bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 via-[#050505] to-black relative">
+            
+            {/* Noise Texture Overlay */}
+            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] pointer-events-none" />
+
+            <div className="w-full max-w-md h-full md:h-[850px] md:my-auto md:rounded-[3rem] bg-[#020202]/50 border-x border-white/5 md:border border-white/5 relative shadow-2xl flex flex-col overflow-hidden backdrop-blur-sm z-10">
+                <div className="pt-10 md:pt-12 px-5 md:px-8 pb-4 flex justify-between items-center shrink-0 z-30 bg-transparent">
                     {currentScreen === 'BOOKING' || (currentScreen === 'GALLERY' && isReviewModalOpen) ? (
-                        <button onClick={() => { if (currentScreen === 'BOOKING') { if (showAuthCard) setShowAuthCard(false); else if (step > 1) setStep(step - 1); else setCurrentScreen('HOME'); } else { setIsReviewModalOpen(false); } }} className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center text-white hover:bg-white/5 transition-all"><ChevronLeft size={18} /></button>
+                        <button onClick={() => { if (currentScreen === 'BOOKING') { if (step > 1) setStep(step - 1); else if (step === 2 && showAuthCard) setShowAuthCard(false); else if (step === 2) setStep(1); else if (step > 1) setStep(step - 1); else setCurrentScreen('HOME'); } else { setIsReviewModalOpen(false); } }} className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center text-white hover:bg-white/5 transition-all"><ChevronLeft size={18} /></button>
                     ) : (
                         <div>
                             {currentScreen === 'HOME' && <h2 className="text-lg font-black text-white uppercase tracking-tight">Olá, {currentUser ? currentUser.user_metadata?.full_name?.split(' ')[0] : 'Visitante'}</h2>}
@@ -442,61 +388,28 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                                 </div>
                             </div>
 
-                            {/* Studio Photos Card - Refined Carousel */}
+                            {/* Studio Photos Card */}
                             {businessSettings.configs?.studio_photos && businessSettings.configs.studio_photos.length > 0 && (
-                                <div className="w-full aspect-[1.5/1] rounded-[2rem] relative overflow-hidden border border-white/5 shadow-2xl bg-[#0c0c0c] group select-none">
-                                    {/* Images with Fade Transition */}
-                                    {businessSettings.configs.studio_photos.map((photo: string, idx: number) => (
-                                        <div 
-                                            key={idx} 
-                                            className={cn(
-                                                "absolute inset-0 w-full h-full transition-all duration-1000 ease-in-out transform will-change-transform",
-                                                idx === currentPhotoIndex 
-                                                    ? "opacity-100 scale-105 z-10" 
-                                                    : "opacity-0 scale-100 z-0"
-                                            )}
-                                        >
-                                            <img src={photo} className="w-full h-full object-cover" alt={`Ambiente ${idx + 1}`} />
-                                            {/* Gradient Overlays for better text visibility */}
-                                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30" />
-                                        </div>
-                                    ))}
-
-                                    {/* Floating Tag */}
-                                    <div className="absolute top-4 left-4 z-20 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-2 shadow-lg">
-                                        <ImageIcon size={10} className="text-white" />
-                                        <span className="text-[8px] font-black uppercase text-white tracking-widest">Nosso Espaço</span>
+                                <div className="w-full aspect-[1.5/1] rounded-[2rem] relative overflow-hidden border border-white/5 shadow-2xl bg-[#0c0c0c] group">
+                                    <div className="absolute top-4 left-4 z-20 bg-black/50 backdrop-blur-md px-3 py-1 rounded-full border border-white/10">
+                                        <p className="text-[8px] font-black uppercase text-white tracking-widest flex items-center gap-1">
+                                            <ImageIcon size={10} /> O Espaço
+                                        </p>
                                     </div>
-
-                                    {/* Controls */}
-                                    {businessSettings.configs.studio_photos.length > 1 && (
-                                        <>
-                                            <button 
-                                                onClick={(e) => { e.stopPropagation(); prevPhoto(); }}
-                                                className="absolute left-3 top-1/2 -translate-y-1/2 z-30 w-8 h-8 rounded-full bg-black/20 backdrop-blur-md border border-white/10 flex items-center justify-center text-white/70 hover:text-white hover:bg-black/50 transition-all opacity-0 group-hover:opacity-100"
-                                            >
-                                                <ChevronLeft size={14} />
-                                            </button>
-                                            <button 
-                                                onClick={(e) => { e.stopPropagation(); nextPhoto(); }}
-                                                className="absolute right-3 top-1/2 -translate-y-1/2 z-30 w-8 h-8 rounded-full bg-black/20 backdrop-blur-md border border-white/10 flex items-center justify-center text-white/70 hover:text-white hover:bg-black/50 transition-all opacity-0 group-hover:opacity-100"
-                                            >
-                                                <ChevronLeft size={14} className="rotate-180" />
-                                            </button>
-
-                                            {/* Discreet Bottom Indicators (Inside) */}
-                                            <div className="absolute bottom-4 right-4 z-20 flex gap-1.5">
-                                                {businessSettings.configs.studio_photos.map((_: any, idx: number) => (
-                                                    <div 
-                                                        key={idx} 
-                                                        className={cn(
-                                                            "h-1 rounded-full transition-all duration-500 shadow-sm",
-                                                            idx === currentPhotoIndex ? "w-6 bg-white" : "w-1.5 bg-white/30"
-                                                        )} 
-                                                    />
-                                                ))}
+                                    <div className="flex overflow-x-auto snap-x snap-mandatory h-full scrollbar-hide">
+                                        {businessSettings.configs.studio_photos.map((photo: string, idx: number) => (
+                                            <div key={idx} className="w-full h-full flex-shrink-0 snap-center relative">
+                                                <img src={photo} className="w-full h-full object-cover" />
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
                                             </div>
-                                        </>
+                                        ))}
+                                    </div>
+                                    {businessSettings.configs.studio_photos.length > 1 && (
+                                        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1 z-20">
+                                            {businessSettings.configs.studio_photos.map((_: any, i: number) => (
+                                                <div key={i} className="w-1 h-1 rounded-full bg-white/50" />
+                                            ))}
+                                        </div>
                                     )}
                                 </div>
                             )}
@@ -550,61 +463,61 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                         <div className="px-5 md:px-8 pb-32">
                             {step === 1 && (<div className="space-y-6 animate-in slide-in-from-right-4"><div className="bg-[#0c0c0c] border border-white/5 p-4 rounded-[2rem]"><div className="flex items-center justify-between mb-4"><button onClick={() => changeMonth(-1)}><ChevronLeft size={14} className="text-zinc-500" /></button><span className="text-[10px] font-black text-white uppercase tracking-widest">{viewDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}</span><button onClick={() => changeMonth(1)}><ChevronLeft size={14} className="text-zinc-500 rotate-180" /></button></div><div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">{calendarDays.map(d => <button key={d.dateStr} disabled={!d.isOpen} onClick={() => setSelectedDate(d.dateStr)} className={cn("min-w-[50px] h-[64px] rounded-xl flex flex-col items-center justify-center transition-all", selectedDate === d.dateStr ? "bg-red-600 text-white shadow-glow-red" : !d.isOpen ? "opacity-20 grayscale" : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800")}><span className="text-[8px] font-bold uppercase">{d.dayName}</span><span className="text-lg font-black">{d.dayNumber}</span></button>)}</div></div><div><h3 className="text-xs font-black text-white uppercase mb-4 pl-1">Horários</h3><div className="grid grid-cols-3 sm:grid-cols-4 gap-2">{availableSlots.length > 0 ? availableSlots.map(t => { const full = (slotOccupancy[t] || 0) >= businessSettings.box_capacity; return <button key={t} disabled={full} onClick={() => setSelectedTime(t)} className={cn("py-3 rounded-lg border text-xs font-bold transition-all", full ? "bg-red-900/10 border-red-900/30 text-red-900 cursor-not-allowed" : selectedTime === t ? "bg-white text-black border-white" : "bg-[#121212] border-white/5 text-zinc-400 hover:border-white/20")}>{t}</button> }) : <p className="col-span-4 text-center text-zinc-600 text-[10px] py-4 uppercase font-bold">Selecione uma data disponível</p>}</div></div></div>)}
                             
-                            {/* Step 2: Identidade ou Auto-skip se Logado */}
-                            {step === 2 && !showAuthCard && (
+                            {/* Step 2: Seus Dados + Auth Inline */}
+                            {step === 2 && !identifiedCustomerId && !currentUser && (
                                 <div className="space-y-4 animate-in slide-in-from-right-4">
                                     <h3 className="text-xs font-black text-white uppercase pl-1">Seus Dados</h3>
-                                    <input placeholder="Nome Completo" className="w-full bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={guestForm.name} onChange={e => setGuestForm({ ...guestForm, name: e.target.value })} />
-                                    <input placeholder="Telefone (WhatsApp)" className="w-full bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={guestForm.phone} onChange={e => setGuestForm({ ...guestForm, phone: formatPhone(e.target.value) })} />
-                                    {identifiedCustomerId && <p className="text-[9px] text-green-500 font-bold uppercase text-center mt-2 flex items-center justify-center gap-1"><Check size={10}/> Cliente Identificado</p>}
-                                </div>
-                            )}
+                                    <input 
+                                        placeholder="Nome Completo" 
+                                        className="w-full bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-red-600 transition-all" 
+                                        value={guestForm.name} 
+                                        onChange={e => setGuestForm({ ...guestForm, name: e.target.value })} 
+                                    />
+                                    <input 
+                                        placeholder="Telefone" 
+                                        className="w-full bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-red-600 transition-all" 
+                                        value={guestForm.phone} 
+                                        onChange={e => setGuestForm({ ...guestForm, phone: formatPhone(e.target.value) })} 
+                                    />
 
-                            {/* Inline Auth Card (Aparece após preencher nome/tel se não logado) */}
-                            {step === 2 && showAuthCard && (
-                                <div className="bg-[#0c0c0c] border border-white/10 rounded-[2rem] p-6 animate-in zoom-in-95 space-y-4 relative overflow-hidden shadow-2xl">
-                                    <div className="absolute top-0 right-0 p-6 opacity-10"><Lock size={64} className="text-white"/></div>
-                                    
-                                    <div className="text-center mb-4 relative z-10">
-                                        <h3 className="text-sm font-black text-white uppercase tracking-tight">Acesso ao Hangar</h3>
-                                        <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest mt-1">
-                                            {authMode === 'REGISTER' ? "Crie sua senha de acesso" : "Informe suas credenciais"}
-                                        </p>
-                                    </div>
+                                    {/* Glassmorphism Auth Card */}
+                                    <AnimatePresence>
+                                        {showAuthCard && (
+                                            <motion.div 
+                                                initial={{ opacity: 0, y: 10 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                exit={{ opacity: 0, y: -10 }}
+                                                className="mt-6 p-6 rounded-2xl bg-zinc-900/60 backdrop-blur-xl border border-white/10 shadow-2xl relative overflow-hidden"
+                                            >
+                                                <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+                                                
+                                                <div className="flex flex-col items-center text-center space-y-4 relative z-10">
+                                                    <div className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center border border-white/10">
+                                                        <Lock size={18} className="text-white" />
+                                                    </div>
+                                                    
+                                                    <p className="text-[10px] font-bold text-zinc-300 uppercase leading-relaxed max-w-xs">
+                                                        Para continuar seu agendamento e ver o andamento, entre ou crie sua conta:
+                                                    </p>
 
-                                    {/* Tabs */}
-                                    <div className="flex p-1 bg-zinc-900 rounded-xl border border-white/5 relative z-10">
-                                        <button onClick={() => setAuthMode('REGISTER')} className={cn("flex-1 py-2 text-[9px] font-black uppercase rounded-lg transition-all", authMode === 'REGISTER' ? "bg-white text-black shadow-lg" : "text-zinc-500 hover:text-white")}>Criar Conta</button>
-                                        <button onClick={() => setAuthMode('LOGIN')} className={cn("flex-1 py-2 text-[9px] font-black uppercase rounded-lg transition-all", authMode === 'LOGIN' ? "bg-white text-black shadow-lg" : "text-zinc-500 hover:text-white")}>Já tenho conta</button>
-                                    </div>
-
-                                    <div className="space-y-3 relative z-10">
-                                        <div className="space-y-1">
-                                            <label className="text-[8px] font-black text-zinc-600 uppercase tracking-widest pl-2">Email</label>
-                                            <div className="relative">
-                                                <Mail size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500"/>
-                                                <input type="email" placeholder="SEU MELHOR EMAIL" className="w-full bg-[#121212] border border-white/10 rounded-xl pl-10 pr-4 py-3 text-[10px] font-bold text-white uppercase outline-none focus:border-white/30" value={authData.email} onChange={e => setAuthData({...authData, email: e.target.value})} />
-                                            </div>
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[8px] font-black text-zinc-600 uppercase tracking-widest pl-2">Senha</label>
-                                            <div className="relative">
-                                                <Key size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500"/>
-                                                <input type="password" placeholder="SUA SENHA SECRETA" className="w-full bg-[#121212] border border-white/10 rounded-xl pl-10 pr-4 py-3 text-[10px] font-bold text-white uppercase outline-none focus:border-white/30" value={authData.password} onChange={e => setAuthData({...authData, password: e.target.value})} />
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {authError && (
-                                        <div className="p-3 bg-red-900/10 border border-red-500/20 rounded-xl text-[9px] font-bold text-red-400 text-center relative z-10">
-                                            {authError}
-                                        </div>
-                                    )}
-
-                                    <button onClick={handleInlineAuth} disabled={loading} className="w-full py-4 bg-red-600 hover:bg-red-500 text-white rounded-xl text-[9px] font-black uppercase tracking-[0.2em] shadow-glow-red flex items-center justify-center gap-2 transition-all relative z-10">
-                                        {loading ? <Loader2 size={14} className="animate-spin" /> : <LogIn size={14} />}
-                                        {authMode === 'REGISTER' ? "Registrar e Continuar" : "Acessar e Continuar"}
-                                    </button>
+                                                    <div className="flex gap-3 w-full pt-2">
+                                                        <button 
+                                                            onClick={onLoginRequest}
+                                                            className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-[9px] font-black uppercase tracking-widest border border-white/5 transition-all flex items-center justify-center gap-2"
+                                                        >
+                                                            <LogIn size={12} /> Entrar
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => onRegisterRequest && onRegisterRequest(guestForm)}
+                                                            className="flex-1 py-3 bg-white text-black hover:bg-zinc-200 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-glow transition-all flex items-center justify-center gap-2"
+                                                        >
+                                                            <UserPlus size={12} /> Criar Conta
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
                                 </div>
                             )}
                             
@@ -619,6 +532,24 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                                         Seu serviço foi agendado para <span className="text-white font-bold">{new Date(selectedDate + 'T12:00:00').toLocaleDateString()}</span> às <span className="text-white font-bold">{selectedTime}</span>.
                                     </p>
                                     
+                                    {!currentUser && (
+                                        <div className="bg-[#09090b] border border-red-600/30 rounded-[2rem] p-6 w-full max-w-sm mb-6 relative overflow-hidden group shadow-[0_0_30px_rgba(220,38,38,0.1)]">
+                                            <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-red-600 to-red-500" />
+                                            <p className="text-[10px] font-black uppercase text-red-500 tracking-widest mb-3 flex items-center justify-center gap-2">
+                                                <User size={12} /> Acompanhe seu Agendamento
+                                            </p>
+                                            <p className="text-xs text-white mb-6 leading-relaxed">
+                                                Crie sua conta agora para receber atualizações, ver o histórico e acumular pontos de fidelidade.
+                                            </p>
+                                            <button 
+                                                onClick={() => onRegisterRequest && onRegisterRequest({ name: guestForm.name, phone: guestForm.phone })} 
+                                                className="w-full py-4 bg-white text-black rounded-xl font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 hover:bg-zinc-200 transition-all shadow-glow hover:scale-[1.02] active:scale-[0.98]"
+                                            >
+                                                Criar Minha Conta <ArrowUpRight size={14} />
+                                            </button>
+                                        </div>
+                                    )}
+                                    
                                     <button 
                                         onClick={() => { setCurrentScreen('HOME'); setStep(1); }} 
                                         className="text-zinc-600 hover:text-white text-[10px] font-bold uppercase tracking-widest py-3 px-6 rounded-xl hover:bg-white/5 transition-all"
@@ -627,16 +558,7 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                                     </button>
                                 </div>
                             )}
-                            
-                            {step < 4 && !showAuthCard && (<div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black to-transparent z-50 flex justify-center">
-                                <button 
-                                    onClick={step === 2 ? handleContinueFromGuestForm : step === 3 ? handleFinalize : handleContinueFromTime} 
-                                    disabled={loading || (step === 1 && (!selectedDate || !selectedTime))} 
-                                    className={cn("w-full max-w-sm py-4 rounded-xl font-black uppercase tracking-widest text-[10px] shadow-glow-red transition-all flex items-center justify-center gap-2", (step === 1 && (!selectedDate || !selectedTime)) ? "bg-zinc-900 text-zinc-600 cursor-not-allowed" : "bg-red-600 text-white hover:bg-red-500")}
-                                >
-                                    {loading ? <Loader2 className="animate-spin" size={14} /> : (step === 3 ? "Finalizar Agendamento" : step === 2 ? "Continuar" : "Continuar")}
-                                </button>
-                            </div>)}
+                            {step < 4 && !showAuthCard && (<div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black to-transparent z-50 flex justify-center"><button onClick={handleContinueAction} disabled={loading || (step === 1 && (!selectedDate || !selectedTime))} className={cn("w-full max-w-sm py-4 rounded-xl font-black uppercase tracking-widest text-[10px] shadow-glow-red transition-all flex items-center justify-center gap-2", (step === 1 && (!selectedDate || !selectedTime)) ? "bg-zinc-900 text-zinc-600 cursor-not-allowed" : "bg-red-600 text-white hover:bg-red-500")}>{loading ? <Loader2 className="animate-spin" size={14} /> : (step === 3 ? "Finalizar" : "Continuar")}</button></div>)}
                         </div>
                     )}
 
