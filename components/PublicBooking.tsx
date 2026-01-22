@@ -340,6 +340,8 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                     {currentScreen === 'HOME' && (
                         <div className="space-y-6 md:space-y-8 px-5 md:px-8">
                             <div className="bg-[#121212] border border-white/5 rounded-2xl h-12 flex items-center px-4 gap-3 text-zinc-500"><Search size={16} /><input placeholder="Buscar serviço..." className="bg-transparent w-full h-full outline-none text-[10px] font-bold uppercase text-white placeholder:text-zinc-700" /></div>
+                            
+                            {/* Business Card */}
                             <div className="w-full aspect-[1.8/1] rounded-[2rem] relative group overflow-hidden border border-white/5 shadow-2xl">
                                 <div className="absolute inset-0 bg-[#050505]/80 backdrop-blur-xl z-10 flex flex-col justify-between p-5">
                                     <div className="flex justify-between items-start relative z-20">
@@ -347,7 +349,6 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                                             <div className="w-12 h-12 rounded-xl bg-zinc-900 border border-white/10 flex items-center justify-center overflow-hidden">{businessSettings.profile_image_url ? <img src={businessSettings.profile_image_url} className="w-full h-full object-cover" /> : <span className="text-xl font-black text-white">{businessSettings.business_name.charAt(0)}</span>}</div>
                                             <div><h3 className="text-sm font-black text-white uppercase tracking-wider">{businessSettings.business_name}</h3><p className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest mt-0.5">Estética Automotiva</p></div>
                                         </div>
-                                        {/* Fix typo: handleOpenWhatsApp -> handleOpenWhatsapp */}
                                         <button onClick={handleOpenWhatsapp} className="w-10 h-10 rounded-full bg-green-900/20 border border-green-500/20 flex items-center justify-center text-green-500 hover:bg-green-500 hover:text-white transition-all"><Phone size={16} /></button>
                                     </div>
                                     <div className="relative z-20 space-y-2">
@@ -357,6 +358,33 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                                     </div>
                                 </div>
                             </div>
+
+                            {/* Studio Photos Card */}
+                            {businessSettings.configs?.studio_photos && businessSettings.configs.studio_photos.length > 0 && (
+                                <div className="w-full aspect-[1.5/1] rounded-[2rem] relative overflow-hidden border border-white/5 shadow-2xl bg-[#0c0c0c] group">
+                                    <div className="absolute top-4 left-4 z-20 bg-black/50 backdrop-blur-md px-3 py-1 rounded-full border border-white/10">
+                                        <p className="text-[8px] font-black uppercase text-white tracking-widest flex items-center gap-1">
+                                            <ImageIcon size={10} /> O Espaço
+                                        </p>
+                                    </div>
+                                    <div className="flex overflow-x-auto snap-x snap-mandatory h-full scrollbar-hide">
+                                        {businessSettings.configs.studio_photos.map((photo: string, idx: number) => (
+                                            <div key={idx} className="w-full h-full flex-shrink-0 snap-center relative">
+                                                <img src={photo} className="w-full h-full object-cover" />
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {businessSettings.configs.studio_photos.length > 1 && (
+                                        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1 z-20">
+                                            {businessSettings.configs.studio_photos.map((_: any, i: number) => (
+                                                <div key={i} className="w-1 h-1 rounded-full bg-white/50" />
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             <div><h3 className="text-sm font-black text-white uppercase mb-4 pl-1">Serviços</h3><div className="grid grid-cols-2 gap-3">{services.map((s) => <button key={s.id} onClick={() => { setSelectedService(s); setCurrentScreen('BOOKING'); setStep(1); }} className="bg-[#121212] border border-white/5 p-4 rounded-[1.5rem] flex flex-col justify-between h-[130px] hover:border-red-600/30 transition-all group"><div className="flex justify-between w-full"><div className="w-8 h-8 rounded-lg bg-zinc-900 flex items-center justify-center group-hover:bg-red-600 transition-colors"><Zap size={14} className="text-white" /></div><p className="text-xs font-black text-white">R$ {Number(s.price).toFixed(0)}</p></div><div className="text-left"><h4 className="text-[10px] font-black text-white uppercase line-clamp-2">{s.name}</h4><div className="flex items-center gap-1 mt-1 text-zinc-500"><Clock size={10} /><span className="text-[8px] font-bold uppercase">{formatDuration(s.duration_minutes)}</span></div></div></button>)}</div></div>
                         </div>
                     )}

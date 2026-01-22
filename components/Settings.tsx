@@ -31,12 +31,20 @@ export const Settings: React.FC<SettingsProps> = ({
   const [newBlockedDate, setNewBlockedDate] = useState<BlockedDate>({ date: '', reason: '' });
   const [billingCycle, setBillingCycle] = useState<'MONTHLY' | 'ANNUAL'>('MONTHLY');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Ref para input de fotos do espaço
+  const studioPhotosInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingStudioPhoto, setUploadingStudioPhoto] = useState(false);
 
   useEffect(() => { 
     setLocalSettings({ 
         ...settings, 
         operating_days: settings.operating_days || settings.configs?.operating_days || [],
-        blocked_dates: settings.blocked_dates || settings.configs?.blocked_dates || []
+        blocked_dates: settings.blocked_dates || settings.configs?.blocked_dates || [],
+        configs: {
+            ...settings.configs,
+            studio_photos: settings.configs?.studio_photos || []
+        }
     }); 
   }, [settings]);
 
@@ -56,7 +64,8 @@ export const Settings: React.FC<SettingsProps> = ({
             ...(rest.configs || {}), 
             operating_days: operating_days || [],
             blocked_dates: blocked_dates || [],
-            instagram: localSettings.configs?.instagram // Ensure instagram is saved in configs
+            instagram: localSettings.configs?.instagram, // Ensure instagram is saved in configs
+            studio_photos: localSettings.configs?.studio_photos || [] // Ensure photos are saved
         } 
     };
     
@@ -87,6 +96,56 @@ export const Settings: React.FC<SettingsProps> = ({
       });
   };
 
+  // Lógica para upload de fotos do espaço
+  const handleUploadStudioPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setUploadingStudioPhoto(true);
+      try {
+          const fileExt = file.name.split('.').pop()?.toLowerCase() || 'png';
+          const filePath = `studio-photos/${settings.id}/${Date.now()}.${fileExt}`;
+
+          // Reutilizando bucket 'portfolio_items' para evitar mexer no backend/policies
+          const { error: uploadError } = await supabase.storage
+              .from('portfolio_items') 
+              .upload(filePath, file);
+
+          if (uploadError) throw uploadError;
+
+          const { data: { publicUrl } } = supabase.storage
+              .from('portfolio_items')
+              .getPublicUrl(filePath);
+
+          const currentPhotos = localSettings.configs?.studio_photos || [];
+          setLocalSettings({
+              ...localSettings,
+              configs: {
+                  ...localSettings.configs,
+                  studio_photos: [...currentPhotos, publicUrl]
+              }
+          });
+
+      } catch (error: any) {
+          console.error("Erro no upload:", error);
+          alert("Erro ao fazer upload da imagem.");
+      } finally {
+          setUploadingStudioPhoto(false);
+          if (studioPhotosInputRef.current) studioPhotosInputRef.current.value = '';
+      }
+  };
+
+  const handleRemoveStudioPhoto = (urlToRemove: string) => {
+      const currentPhotos = localSettings.configs?.studio_photos || [];
+      setLocalSettings({
+          ...localSettings,
+          configs: {
+              ...localSettings.configs,
+              studio_photos: currentPhotos.filter((url: string) => url !== urlToRemove)
+          }
+      });
+  };
+
   const handleAddServiceSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isLimitReached) return alert("Limite de 5 serviços atingido no plano START. Faça upgrade para PRO!");
@@ -112,49 +171,98 @@ export const Settings: React.FC<SettingsProps> = ({
 
       <div className="min-h-[500px]">
         {activeTab === 'geral' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-[#09090b] border border-white/10 rounded-[2.5rem] p-6 space-y-6">
-                    <h3 className="text-lg font-black text-white uppercase flex items-center gap-3"><Building2 size={18} className="text-red-600"/> Dados do Hangar</h3>
-                    <div className="space-y-6">
-                        <div className="flex flex-col md:flex-row gap-6 items-start">
-                            <div onClick={() => fileInputRef.current?.click()} className="w-20 h-20 rounded-2xl bg-zinc-950 border border-white/10 flex items-center justify-center cursor-pointer hover:border-red-600 transition-colors overflow-hidden relative group shrink-0">
-                                {localSettings.profile_image_url ? <img src={localSettings.profile_image_url} className="w-full h-full object-cover" /> : <ImageIcon className="text-zinc-700"/>}
-                                <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Upload size={16} className="text-white"/></div>
-                            </div>
-                            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={e => { const file = e.target.files?.[0]; if (!file) return; const r = new FileReader(); r.onloadend = () => setLocalSettings({...localSettings, profile_image_url: r.result as string}); r.readAsDataURL(file); }} />
-                            <div className="flex-1 space-y-3 w-full">
-                                <input className="w-full bg-zinc-950 border border-white/5 rounded-xl px-4 py-3 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={localSettings.business_name} onChange={e => setLocalSettings({...localSettings, business_name: e.target.value})} placeholder="Nome da Estética" />
-                                <div className="grid grid-cols-2 gap-3">
-                                    <input 
-                                        className="w-full bg-zinc-950 border border-white/5 rounded-xl px-4 py-3 text-xs font-bold text-white uppercase outline-none focus:border-red-600" 
-                                        value={localSettings.whatsapp || ''} 
-                                        onChange={e => setLocalSettings({...localSettings, whatsapp: e.target.value})} 
-                                        placeholder="WHATSAPP" 
-                                    />
-                                    <input 
-                                        className="w-full bg-zinc-950 border border-white/5 rounded-xl px-4 py-3 text-xs font-bold text-white outline-none focus:border-red-600" 
-                                        value={localSettings.configs?.instagram || ''} 
-                                        onChange={e => setLocalSettings({
-                                            ...localSettings, 
-                                            configs: { ...localSettings.configs, instagram: e.target.value }
-                                        })} 
-                                        placeholder="@INSTAGRAM" 
-                                    />
+            <div className="space-y-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="bg-[#09090b] border border-white/10 rounded-[2.5rem] p-6 space-y-6">
+                        <h3 className="text-lg font-black text-white uppercase flex items-center gap-3"><Building2 size={18} className="text-red-600"/> Dados do Hangar</h3>
+                        <div className="space-y-6">
+                            <div className="flex flex-col md:flex-row gap-6 items-start">
+                                <div onClick={() => fileInputRef.current?.click()} className="w-20 h-20 rounded-2xl bg-zinc-950 border border-white/10 flex items-center justify-center cursor-pointer hover:border-red-600 transition-colors overflow-hidden relative group shrink-0">
+                                    {localSettings.profile_image_url ? <img src={localSettings.profile_image_url} className="w-full h-full object-cover" /> : <ImageIcon className="text-zinc-700"/>}
+                                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Upload size={16} className="text-white"/></div>
+                                </div>
+                                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={e => { const file = e.target.files?.[0]; if (!file) return; const r = new FileReader(); r.onloadend = () => setLocalSettings({...localSettings, profile_image_url: r.result as string}); r.readAsDataURL(file); }} />
+                                <div className="flex-1 space-y-3 w-full">
+                                    <input className="w-full bg-zinc-950 border border-white/5 rounded-xl px-4 py-3 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={localSettings.business_name} onChange={e => setLocalSettings({...localSettings, business_name: e.target.value})} placeholder="Nome da Estética" />
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <input 
+                                            className="w-full bg-zinc-950 border border-white/5 rounded-xl px-4 py-3 text-xs font-bold text-white uppercase outline-none focus:border-red-600" 
+                                            value={localSettings.whatsapp || ''} 
+                                            onChange={e => setLocalSettings({...localSettings, whatsapp: e.target.value})} 
+                                            placeholder="WHATSAPP" 
+                                        />
+                                        <input 
+                                            className="w-full bg-zinc-950 border border-white/5 rounded-xl px-4 py-3 text-xs font-bold text-white outline-none focus:border-red-600" 
+                                            value={localSettings.configs?.instagram || ''} 
+                                            onChange={e => setLocalSettings({
+                                                ...localSettings, 
+                                                configs: { ...localSettings.configs, instagram: e.target.value }
+                                            })} 
+                                            placeholder="@INSTAGRAM" 
+                                        />
+                                    </div>
                                 </div>
                             </div>
+                            <div>
+                                <label className="text-[9px] font-black text-zinc-600 uppercase tracking-widest mb-2 block ml-2">Endereço Físico</label>
+                                <input className="w-full bg-zinc-950 border border-white/5 rounded-xl px-4 py-3 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={localSettings.address || ''} onChange={e => setLocalSettings({...localSettings, address: e.target.value})} placeholder="Rua, Número, Bairro, Cidade - UF" />
+                            </div>
                         </div>
-                        <div>
-                            <label className="text-[9px] font-black text-zinc-600 uppercase tracking-widest mb-2 block ml-2">Endereço Físico</label>
-                            <input className="w-full bg-zinc-950 border border-white/5 rounded-xl px-4 py-3 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={localSettings.address || ''} onChange={e => setLocalSettings({...localSettings, address: e.target.value})} placeholder="Rua, Número, Bairro, Cidade - UF" />
+                    </div>
+                    <div className="bg-[#09090b] border border-white/10 rounded-[2.5rem] p-6 space-y-4">
+                        <h3 className="text-lg font-black text-white uppercase flex items-center gap-3"><ExternalLink size={18} className="text-red-600"/> Link de Agendamento</h3>
+                        <div className="bg-black/50 border border-white/5 p-4 rounded-2xl flex items-center justify-between">
+                            <code className="text-[10px] text-zinc-400 font-mono truncate mr-4">{bookingUrl}</code>
+                            <button onClick={() => { navigator.clipboard.writeText(bookingUrl); alert("Link copiado!"); }} className="p-3 bg-white/5 rounded-xl text-zinc-400 hover:text-white"><Copy size={16} /></button>
                         </div>
                     </div>
                 </div>
-                <div className="bg-[#09090b] border border-white/10 rounded-[2.5rem] p-6 space-y-4">
-                    <h3 className="text-lg font-black text-white uppercase flex items-center gap-3"><ExternalLink size={18} className="text-red-600"/> Link de Agendamento</h3>
-                    <div className="bg-black/50 border border-white/5 p-4 rounded-2xl flex items-center justify-between">
-                        <code className="text-[10px] text-zinc-400 font-mono truncate mr-4">{bookingUrl}</code>
-                        <button onClick={() => { navigator.clipboard.writeText(bookingUrl); alert("Link copiado!"); }} className="p-3 bg-white/5 rounded-xl text-zinc-400 hover:text-white"><Copy size={16} /></button>
+
+                {/* Seção Fotos do Espaço */}
+                <div className="bg-[#09090b] border border-white/10 rounded-[2.5rem] p-6 space-y-6">
+                    <div className="flex justify-between items-center">
+                        <h3 className="text-lg font-black text-white uppercase flex items-center gap-3">
+                            <ImageIcon size={18} className="text-red-600"/> Fotos do Espaço
+                        </h3>
+                        <button 
+                            onClick={() => studioPhotosInputRef.current?.click()}
+                            disabled={uploadingStudioPhoto}
+                            className="bg-zinc-900 hover:bg-white hover:text-black text-white border border-white/10 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center gap-2 transition-all disabled:opacity-50"
+                        >
+                            {uploadingStudioPhoto ? <Loader2 className="animate-spin" size={12} /> : <Plus size={12} />}
+                            Adicionar Foto
+                        </button>
+                        <input 
+                            type="file" 
+                            ref={studioPhotosInputRef} 
+                            className="hidden" 
+                            accept="image/*" 
+                            onChange={handleUploadStudioPhoto} 
+                        />
                     </div>
+                    
+                    {(!localSettings.configs?.studio_photos || localSettings.configs.studio_photos.length === 0) ? (
+                        <div className="h-32 rounded-2xl border border-dashed border-white/10 flex flex-col items-center justify-center text-zinc-600">
+                            <ImageIcon size={24} className="mb-2 opacity-50"/>
+                            <p className="text-[10px] font-bold uppercase tracking-widest">Nenhuma foto adicionada</p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            {localSettings.configs.studio_photos.map((url: string, idx: number) => (
+                                <div key={idx} className="aspect-square rounded-2xl bg-zinc-950 relative group overflow-hidden border border-white/5">
+                                    <img src={url} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                        <button 
+                                            onClick={() => handleRemoveStudioPhoto(url)}
+                                            className="p-2 bg-red-600 rounded-lg text-white hover:bg-red-500 transition-colors"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
         )}
