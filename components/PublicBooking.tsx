@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Check, ChevronLeft, Star, MapPin, Search, Zap, X, User, ArrowRight, Clock, Loader2, CalendarX, History, LayoutGrid, Bell, Phone, Filter, Instagram, Calendar as CalendarIcon, Wrench, Car, LogOut, Key, MessageSquare, Send, Image as ImageIcon, ThumbsUp, Lock, ArrowUpRight, Trophy, Reply } from 'lucide-react';
+import { Check, ChevronLeft, Star, MapPin, Search, Zap, X, User, ArrowRight, Clock, Loader2, CalendarX, History, LayoutGrid, Bell, Phone, Filter, Instagram, Calendar as CalendarIcon, Wrench, Car, LogOut, Key, MessageSquare, Send, Image as ImageIcon, ThumbsUp, Lock, ArrowUpRight, Trophy, Reply, LogIn } from 'lucide-react';
 import { BusinessSettings, ServiceItem, Appointment, PortfolioItem, Review } from '../types';
 import { cn, formatPhone, formatPlate } from '../lib/utils';
 import { supabase } from '../lib/supabaseClient';
@@ -95,6 +95,13 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
 
     const [isOpenNow, setIsOpenNow] = useState(false);
     const LockIcon = Lock as any;
+
+    // Detectar login durante o fluxo para avançar automaticamente
+    useEffect(() => {
+        if (currentUser && currentScreen === 'BOOKING' && step === 1 && selectedDate && selectedTime) {
+            setStep(3); // Pula dados pessoais, vai direto para Veículo
+        }
+    }, [currentUser, currentScreen, step, selectedDate, selectedTime]);
 
     useEffect(() => {
         const checkOpenStatus = () => {
@@ -214,6 +221,18 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
         fetchAndGenerateSlots();
         setSelectedTime('');
     }, [selectedDate, businessSettings]);
+
+    const handleContinueFromTime = () => {
+        if (!selectedDate || !selectedTime) return;
+        
+        if (currentUser) {
+            setStep(3); // Pula step 2 (Guest Form) se já logado
+        } else {
+            // Se não logado, solicita login/registro. O App.tsx mostrará o AuthScreen como overlay.
+            // O useEffect lá em cima cuidará de avançar quando o usuário logar.
+            onLoginRequest?.();
+        }
+    };
 
     const handleFinalize = async () => {
         if (!selectedService || !selectedDate || !selectedTime) return;
@@ -386,13 +405,19 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                     {currentScreen === 'BOOKING' && (
                         <div className="px-5 md:px-8 pb-32">
                             {step === 1 && (<div className="space-y-6 animate-in slide-in-from-right-4"><div className="bg-[#0c0c0c] border border-white/5 p-4 rounded-[2rem]"><div className="flex items-center justify-between mb-4"><button onClick={() => changeMonth(-1)}><ChevronLeft size={14} className="text-zinc-500" /></button><span className="text-[10px] font-black text-white uppercase tracking-widest">{viewDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}</span><button onClick={() => changeMonth(1)}><ChevronLeft size={14} className="text-zinc-500 rotate-180" /></button></div><div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">{calendarDays.map(d => <button key={d.dateStr} disabled={!d.isOpen} onClick={() => setSelectedDate(d.dateStr)} className={cn("min-w-[50px] h-[64px] rounded-xl flex flex-col items-center justify-center transition-all", selectedDate === d.dateStr ? "bg-red-600 text-white shadow-glow-red" : !d.isOpen ? "opacity-20 grayscale" : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800")}><span className="text-[8px] font-bold uppercase">{d.dayName}</span><span className="text-lg font-black">{d.dayNumber}</span></button>)}</div></div><div><h3 className="text-xs font-black text-white uppercase mb-4 pl-1">Horários</h3><div className="grid grid-cols-3 sm:grid-cols-4 gap-2">{availableSlots.length > 0 ? availableSlots.map(t => { const full = (slotOccupancy[t] || 0) >= businessSettings.box_capacity; return <button key={t} disabled={full} onClick={() => setSelectedTime(t)} className={cn("py-3 rounded-lg border text-xs font-bold transition-all", full ? "bg-red-900/10 border-red-900/30 text-red-900 cursor-not-allowed" : selectedTime === t ? "bg-white text-black border-white" : "bg-[#121212] border-white/5 text-zinc-400 hover:border-white/20")}>{t}</button> }) : <p className="col-span-4 text-center text-zinc-600 text-[10px] py-4 uppercase font-bold">Selecione uma data disponível</p>}</div></div></div>)}
+                            
+                            {/* Step 2 is now "Identified Profile" (if logged in) OR we skip it if forcing login. 
+                                In this updated flow, we force login, so Step 2 is effectively "Confirm Profile" */}
                             {step === 2 && identifiedCustomerId && <div className="py-20 text-center space-y-4 animate-in fade-in">
                                 <div className="w-16 h-16 bg-red-600/10 rounded-full flex items-center justify-center mx-auto"><User className="text-red-600" /></div>
                                 <h3 className="text-white font-black uppercase tracking-tight">Perfil Identificado</h3>
                                 <p className="text-[10px] text-zinc-500 uppercase font-bold">Usando dados salvos de {guestForm.name}</p>
                                 <button onClick={() => setStep(3)} className="px-8 py-3 bg-zinc-900 text-white rounded-xl text-[9px] font-black uppercase tracking-widest border border-white/5">Confirmar e Seguir</button>
                             </div>}
-                            {step === 2 && !identifiedCustomerId && (<div className="space-y-4 animate-in slide-in-from-right-4"><h3 className="text-xs font-black text-white uppercase pl-1">Seus Dados</h3><input placeholder="Nome Completo" className="w-full bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={guestForm.name} onChange={e => setGuestForm({ ...guestForm, name: e.target.value })} /><input placeholder="Telefone" className="w-full bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={guestForm.phone} onChange={e => setGuestForm({ ...guestForm, phone: formatPhone(e.target.value) })} /></div>)}
+                            
+                            {/* NOTE: With forced login, we shouldn't really see the guest form, but keeping it as a fallback if needed internally */}
+                            {step === 2 && !identifiedCustomerId && !currentUser && (<div className="space-y-4 animate-in slide-in-from-right-4"><h3 className="text-xs font-black text-white uppercase pl-1">Seus Dados</h3><input placeholder="Nome Completo" className="w-full bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={guestForm.name} onChange={e => setGuestForm({ ...guestForm, name: e.target.value })} /><input placeholder="Telefone" className="w-full bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={guestForm.phone} onChange={e => setGuestForm({ ...guestForm, phone: formatPhone(e.target.value) })} /></div>)}
+                            
                             {step === 3 && (<div className="space-y-4 animate-in slide-in-from-right-4"><h3 className="text-xs font-black text-white uppercase pl-1">Veículo</h3><div className="grid grid-cols-2 gap-3"><input placeholder="Marca" className="bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={vehicleForm.brand} onChange={e => setVehicleForm({ ...vehicleForm, brand: e.target.value })} /><input placeholder="Modelo" className="bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={vehicleForm.model} onChange={e => setVehicleForm({ ...vehicleForm, model: e.target.value })} /></div><input placeholder="Placa" className="w-full bg-[#121212] border border-white/5 rounded-xl p-4 text-xs font-bold text-white uppercase outline-none focus:border-red-600" value={vehicleForm.plate} onChange={e => setVehicleForm({ ...vehicleForm, plate: formatPlate(e.target.value) })} /></div>)}
                             {step === 4 && (
                                 <div className="flex flex-col items-center justify-center py-10 animate-in zoom-in-95 text-center px-4">
@@ -430,7 +455,7 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                                     </button>
                                 </div>
                             )}
-                            {step < 4 && (<div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black to-transparent z-50 flex justify-center"><button onClick={() => { if (step === 1) { if (selectedDate && selectedTime) setStep(2); } else if (step === 2) { if (guestForm.name && guestForm.phone) setStep(3); } else if (step === 3) { if (vehicleForm.brand && vehicleForm.model) handleFinalize(); } }} disabled={loading || (step === 1 && (!selectedDate || !selectedTime))} className={cn("w-full max-w-sm py-4 rounded-xl font-black uppercase tracking-widest text-[10px] shadow-glow-red transition-all flex items-center justify-center gap-2", (step === 1 && (!selectedDate || !selectedTime)) ? "bg-zinc-900 text-zinc-600 cursor-not-allowed" : "bg-red-600 text-white hover:bg-red-500")}>{loading ? <Loader2 className="animate-spin" size={14} /> : (step === 3 ? "Finalizar" : "Continuar")}</button></div>)}
+                            {step < 4 && (<div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black to-transparent z-50 flex justify-center"><button onClick={handleContinueFromTime} disabled={loading || (step === 1 && (!selectedDate || !selectedTime))} className={cn("w-full max-w-sm py-4 rounded-xl font-black uppercase tracking-widest text-[10px] shadow-glow-red transition-all flex items-center justify-center gap-2", (step === 1 && (!selectedDate || !selectedTime)) ? "bg-zinc-900 text-zinc-600 cursor-not-allowed" : "bg-red-600 text-white hover:bg-red-500")}>{loading ? <Loader2 className="animate-spin" size={14} /> : (step === 3 ? "Finalizar" : (step === 1 && !currentUser) ? "Continuar com Login" : "Continuar")}</button></div>)}
                         </div>
                     )}
 

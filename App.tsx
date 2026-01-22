@@ -90,9 +90,9 @@ function App() {
       return { ...biz, operating_days, blocked_dates };
   };
 
-  const fetchData = async () => {
+  const fetchData = async (silent = false) => {
     try {
-        setLoading(true);
+        if (!silent) setLoading(true);
         let businessId = '';
         const userRole = session?.user?.user_metadata?.role;
 
@@ -152,7 +152,7 @@ function App() {
         }
 
         if (!businessId) {
-            setLoading(false);
+            if (!silent) setLoading(false);
             return;
         }
 
@@ -256,7 +256,7 @@ function App() {
     } catch (error) {
         console.error("Data Load Error:", error);
     } finally {
-        setLoading(false);
+        if (!silent) setLoading(false);
     }
   };
 
@@ -307,7 +307,7 @@ function App() {
       }
   };
 
-  const handleAddAppointment = async (apt: Appointment, newCustomer?: Customer) => {
+  const handleAddAppointment = async (apt: Appointment, newCustomer?: Customer, silent = false) => {
       const { data: { session: currentSession } } = await supabase.auth.getSession();
       
       // Se não houver sessão, não atribuímos user_id para evitar erro de RLS ao tentar salvar como Admin sendo anônimo.
@@ -410,7 +410,7 @@ function App() {
       });
       
       if (error) alert("Erro ao agendar: " + error.message);
-      else fetchData();
+      else fetchData(silent); // Usar silent refresh para evitar reset da UI no fluxo público
   };
 
   const handleReplyReview = async (id: string, reply: string) => {
@@ -425,8 +425,9 @@ function App() {
 
   if (loading) return <div className="h-screen bg-black flex items-center justify-center"><Loader2 className="animate-spin text-red-600" size={32} /></div>;
 
-  // PRIORITY 1: Auth Screen (Allows public users to register seamlessly)
-  if (showAuth && !session) {
+  // PRIORITY 1: Auth Screen (Admin or Direct)
+  // We keep the original check for ADMIN login or direct auth access not related to PublicBooking flow
+  if (showAuth && !session && !publicSlug && !settings) {
       return <AuthScreen 
         role={authRole} 
         onLogin={() => { setShowAuth(false); fetchData(); }} 
@@ -436,26 +437,42 @@ function App() {
   }
 
   // PRIORITY 2: Public Booking Interface (Guest or Client)
+  // Modified to Render AuthScreen as an Overlay if needed, keeping PublicBooking mounted
   if ((publicSlug || session?.user?.user_metadata?.role === 'CLIENT') && settings) {
-      return <PublicBooking 
-        currentUser={session?.user}
-        businessSettings={settings}
-        services={services}
-        existingAppointments={appointments}
-        portfolio={portfolio}
-        reviews={reviews}
-        onBookingComplete={async (apt, newCustomer) => {
-            await handleAddAppointment(apt, newCustomer);
-            return true;
-        }}
-        onExit={() => {
-            supabase.auth.signOut();
-            setPublicSlug(null);
-            window.location.href = '/';
-        }}
-        onLoginRequest={() => { setAuthRole('CLIENT'); setShowAuth(true); }}
-        onRegisterRequest={(data) => { setAuthRole('CLIENT'); setPreFillAuth(data); setShowAuth(true); }}
-      />
+      return (
+        <>
+            <PublicBooking 
+                currentUser={session?.user}
+                businessSettings={settings}
+                services={services}
+                existingAppointments={appointments}
+                portfolio={portfolio}
+                reviews={reviews}
+                onBookingComplete={async (apt, newCustomer) => {
+                    await handleAddAppointment(apt, newCustomer, true); 
+                    return true;
+                }}
+                onExit={() => {
+                    supabase.auth.signOut();
+                    setPublicSlug(null);
+                    window.location.href = '/';
+                }}
+                onLoginRequest={() => { setAuthRole('CLIENT'); setShowAuth(true); }}
+                onRegisterRequest={(data) => { setAuthRole('CLIENT'); setPreFillAuth(data); setShowAuth(true); }}
+            />
+            
+            {showAuth && !session && (
+                <div className="fixed inset-0 z-[250] bg-black animate-in fade-in duration-300">
+                    <AuthScreen 
+                        role="CLIENT"
+                        onLogin={() => { setShowAuth(false); fetchData(); }} 
+                        onBack={() => setShowAuth(false)} 
+                        preFillData={preFillAuth} 
+                    />
+                </div>
+            )}
+        </>
+      );
   }
 
   // PRIORITY 3: Landing Screen (No session, no public slug)
