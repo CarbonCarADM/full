@@ -41,6 +41,7 @@ function App() {
 
   // Public Mode
   const [publicSlug, setPublicSlug] = useState<string | null>(null);
+  const [previewMode, setPreviewMode] = useState(false);
 
   // Auth Flow
   const [showAuth, setShowAuth] = useState(false);
@@ -94,6 +95,7 @@ function App() {
     try {
         if (!silent) setLoading(true);
         let businessId = '';
+        let currentBiz: any = null;
         const userRole = session?.user?.user_metadata?.role;
 
         // PRIORIDADE 1: Slug na URL
@@ -105,6 +107,7 @@ function App() {
                 .maybeSingle();
 
             if (biz) {
+                currentBiz = biz;
                 const normalized = normalizeSettings(biz);
                 setSettings(normalized);
                 businessId = biz.id;
@@ -132,6 +135,7 @@ function App() {
                         .maybeSingle();
 
                      if (biz) {
+                        currentBiz = biz;
                         setSettings(normalizeSettings(biz));
                         businessId = biz.id;
                         if (!publicSlug) setPublicSlug(biz.slug); 
@@ -145,10 +149,41 @@ function App() {
                     .maybeSingle();
 
                 if (biz) {
+                    currentBiz = biz;
                     setSettings(normalizeSettings(biz));
                     businessId = biz.id;
                 }
             }
+        }
+
+        // FALLBACK PARA PREVIEW MODE (Se nada for encontrado e estiver em preview)
+        if (!businessId && previewMode) {
+             const { data: firstBiz } = await supabase.from('business_settings').select('*').limit(1).maybeSingle();
+             if (firstBiz) {
+                 currentBiz = firstBiz;
+                 setSettings(normalizeSettings(firstBiz));
+                 businessId = firstBiz.id;
+                 setPublicSlug(firstBiz.slug);
+             } else {
+                 const mockBiz: BusinessSettings = {
+                     id: 'mock-id',
+                     business_name: 'Hangar Carbon Demo',
+                     slug: 'carbon-demo',
+                     box_capacity: 3,
+                     patio_capacity: 10,
+                     online_booking_enabled: true,
+                     loyalty_program_enabled: true,
+                     slot_interval_minutes: 60,
+                     configs: { instagram: '@carboncar' }
+                 };
+                 setSettings(normalizeSettings(mockBiz));
+                 setServices([
+                     { id: '1', name: 'Lavagem Detalhada', price: 150, duration_minutes: 120, description: 'Limpeza profunda externa e interna.', is_active: true },
+                     { id: '2', name: 'Polimento Técnico', price: 450, duration_minutes: 240, description: 'Correção de verniz e brilho espelhado.', is_active: true }
+                 ]);
+                 if (!silent) setLoading(false);
+                 return;
+             }
         }
 
         if (!businessId) {
@@ -158,8 +193,8 @@ function App() {
 
         // --- FETCH LOGIC SPLIT BASED ON ROLE ---
         
-        if (userRole === 'CLIENT') {
-            // CLIENTS: Fetch only public data. User-specific data is handled by PublicBooking component.
+        if (userRole === 'CLIENT' || previewMode) {
+            // CLIENTS: Fetch only public data
             const results = await Promise.allSettled([
                 supabase.from('services').select('*').eq('business_id', businessId).eq('is_active', true),
                 supabase.from('portfolio_items').select('*').eq('business_id', businessId).order('created_at', { ascending: false }),
@@ -168,7 +203,13 @@ function App() {
 
             const [servs, port, revs] = results.map(r => r.status === 'fulfilled' ? r.value : { data: null });
 
-            if (servs.data) setServices(servs.data as ServiceItem[]);
+            if (servs.data) {
+                const serviceImages = currentBiz?.configs?.service_images || {};
+                setServices((servs.data as any[]).map(s => ({
+                    ...s,
+                    image_url: serviceImages[s.id] || s.image_url
+                })));
+            }
             else setServices([]);
 
             if (port.data) {
@@ -197,7 +238,6 @@ function App() {
 
             const [apts, servs, bays, exps, port, revs, custRes] = results.map(r => r.status === 'fulfilled' ? r.value : { data: null });
 
-            // Store raw appointments for LTV calculation
             const rawAppointments = apts.data || [];
 
             if (apts.data) {
@@ -206,7 +246,13 @@ function App() {
                 })));
             }
             
-            if (servs.data) setServices(servs.data as ServiceItem[]);
+            if (servs.data) {
+                const serviceImages = currentBiz?.configs?.service_images || {};
+                setServices((servs.data as any[]).map(s => ({
+                    ...s,
+                    image_url: serviceImages[s.id] || s.image_url
+                })));
+            }
             else setServices([]);
 
             if (bays.data) setServiceBays(bays.data as ServiceBay[]);
@@ -230,7 +276,6 @@ function App() {
                 const { data: vehiclesData } = await supabase.from('vehicles').select('*').in('customer_id', customerIds);
                 
                 processedCustomers = custRes.data.map((c: any) => {
-                    // Calculate LTV: Sum of finalized appointments for this customer
                     const calculatedLTV = rawAppointments
                         .filter((a: any) => a.customer_id === c.id && a.status === 'FINALIZADO')
                         .reduce((sum: number, a: any) => sum + (Number(a.price) || 0), 0);
@@ -261,184 +306,79 @@ function App() {
   };
 
   useEffect(() => {
-      if (session || publicSlug) fetchData();
-  }, [session, publicSlug]);
+      if (session || publicSlug || previewMode) fetchData();
+  }, [session, publicSlug, previewMode]);
 
   const handleUpdateStatus = async (id: string, status: AppointmentStatus) => {
-      // Capturamos o agendamento atual antes da atualização
       const currentApt = appointments.find(a => a.id === id);
-      
       const { success } = await save('appointments', { id, status });
-      
       if (success) {
           setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
-          
           if (status === AppointmentStatus.CONFIRMADO && currentApt) {
               const customer = customers.find(c => c.id === currentApt.customerId);
-              
               if (customer && customer.phone) {
-                  // Localiza o veículo vinculado ao agendamento
                   const vehicle = (customer.vehicles || []).find(v => v.id === currentApt.vehicleId) || 
                                   (customer.vehicles && customer.vehicles.length > 0 ? customer.vehicles[0] : null);
-                  
-                  const msg = generateConfirmationMessage(
-                      settings?.business_name || 'CarbonCar',
-                      customer.name,
-                      currentApt.date,
-                      currentApt.time,
-                      vehicle?.model || 'Veículo',
-                      vehicle?.plate || '',
-                      currentApt.serviceType
-                  );
-                  
-                  setWhatsappModal({
-                      isOpen: true,
-                      phone: customer.phone,
-                      message: msg,
-                      customerName: customer.name
-                  });
+                  const msg = generateConfirmationMessage(settings?.business_name || 'CarbonCar', customer.name, currentApt.date, currentApt.time, vehicle?.model || 'Veículo', vehicle?.plate || '', currentApt.serviceType);
+                  setWhatsappModal({ isOpen: true, phone: customer.phone, message: msg, customerName: customer.name });
               }
           }
-          
-          // Re-fetch data if status changes to FINALIZADO to update LTV
-          if (status === AppointmentStatus.FINALIZADO) {
-              fetchData();
-          }
+          if (status === AppointmentStatus.FINALIZADO) fetchData();
       }
   };
 
   const handleAddAppointment = async (apt: Appointment, newCustomer?: Customer, silent = false) => {
       const { data: { session: currentSession } } = await supabase.auth.getSession();
-      
-      // Se não houver sessão, não atribuímos user_id para evitar erro de RLS ao tentar salvar como Admin sendo anônimo.
       const customerUserId = currentSession?.user?.id || null;
-
-      if (!settings) {
-          alert("Hangar não identificado. Recarregue a página.");
-          return;
-      }
-
+      if (!settings) return alert("Hangar não identificado.");
       let finalCustomerId = apt.customerId;
       let finalVehicleId = apt.vehicleId;
-
       if (newCustomer) {
-          const { data: existingCust } = await supabase
-            .from('customers')
-            .select('id, vehicles(id, plate)')
-            .eq('business_id', settings.id)
-            .eq('phone', newCustomer.phone)
-            .maybeSingle();
-
+          const { data: existingCust } = await supabase.from('customers').select('id, vehicles(id, plate)').eq('business_id', settings.id).eq('phone', newCustomer.phone).maybeSingle();
           if (existingCust) {
               finalCustomerId = existingCust.id;
               const vehicleData = newCustomer.vehicles[0];
               const existingVeh = existingCust.vehicles.find((v: any) => v.plate === vehicleData.plate.toUpperCase());
-              
-              if (existingVeh) {
-                  finalVehicleId = existingVeh.id;
-              } else {
+              if (existingVeh) finalVehicleId = existingVeh.id;
+              else {
                   const newVehId = generateUUID();
-                  const { error: vErr } = await supabase.from('vehicles').insert({
-                      id: newVehId,
-                      customer_id: finalCustomerId, 
-                      brand: vehicleData.brand, 
-                      model: vehicleData.model, 
-                      plate: vehicleData.plate.toUpperCase(), 
-                      type: 'CARRO'
-                  });
-                  
+                  const { error: vErr } = await supabase.from('vehicles').insert({ id: newVehId, customer_id: finalCustomerId, brand: vehicleData.brand, model: vehicleData.model, plate: vehicleData.plate.toUpperCase(), type: 'CARRO' });
                   if (!vErr) finalVehicleId = newVehId;
-                  else console.error("Erro ao criar veículo:", vErr);
               }
           } else {
               const newCustId = generateUUID();
-              
-              const { error: cErr } = await supabase.from('customers').insert({
-                  id: newCustId,
-                  business_id: settings.id, 
-                  user_id: customerUserId, 
-                  name: newCustomer.name, 
-                  phone: newCustomer.phone, 
-                  email: newCustomer.email
-              });
-              
-              if (cErr) { 
-                  console.error("Erro Customer Insert:", cErr); 
-                  alert("Erro ao cadastrar cliente. Verifique os dados."); 
-                  return; 
-              }
-
+              const { error: cErr } = await supabase.from('customers').insert({ id: newCustId, business_id: settings.id, user_id: customerUserId, name: newCustomer.name, phone: newCustomer.phone, email: newCustomer.email });
+              if (cErr) return;
               finalCustomerId = newCustId;
               const vehicleData = newCustomer.vehicles[0];
               const newVehId = generateUUID();
-
-              const { error: vErr } = await supabase.from('vehicles').insert({
-                  id: newVehId,
-                  customer_id: newCustId, 
-                  brand: vehicleData.brand, 
-                  model: vehicleData.model, 
-                  plate: vehicleData.plate.toUpperCase(), 
-                  type: 'CARRO'
-              });
-
+              const { error: vErr } = await supabase.from('vehicles').insert({ id: newVehId, customer_id: newCustId, brand: vehicleData.brand, model: vehicleData.model, plate: vehicleData.plate.toUpperCase(), type: 'CARRO' });
               if (!vErr) finalVehicleId = newVehId;
-              else console.error("Erro ao criar veículo:", vErr);
           }
       }
-
-      // Box Fallback
       let finalBoxId = apt.boxId;
       if (!finalBoxId || finalBoxId.length < 10) {
           if (serviceBays.length > 0) finalBoxId = serviceBays[0].id;
-          else { alert("Nenhum box disponível."); return; }
+          else return alert("Nenhum box disponível.");
       }
-
-      const { error } = await supabase.from('appointments').insert({
-        business_id: settings.id,
-        user_id: customerUserId, 
-        customer_id: finalCustomerId,
-        vehicle_id: finalVehicleId,
-        service_id: apt.serviceId,
-        service_type: apt.serviceType,
-        date: apt.date,
-        time: apt.time,
-        duration_minutes: apt.durationMinutes,
-        price: apt.price,
-        status: AppointmentStatus.NOVO,
-        observation: apt.observation,
-        box_id: finalBoxId
-      });
-      
+      const { error } = await supabase.from('appointments').insert({ business_id: settings.id, user_id: customerUserId, customer_id: finalCustomerId, vehicle_id: finalVehicleId, service_id: apt.serviceId, service_type: apt.serviceType, date: apt.date, time: apt.time, duration_minutes: apt.durationMinutes, price: apt.price, status: AppointmentStatus.NOVO, observation: apt.observation, box_id: finalBoxId });
       if (error) alert("Erro ao agendar: " + error.message);
-      else fetchData(silent); // Usar silent refresh para evitar reset da UI no fluxo público
+      else fetchData(silent);
   };
 
   const handleReplyReview = async (id: string, reply: string) => {
-      const { error } = await supabase
-          .from('reviews')
-          .update({ reply })
-          .eq('id', id);
-      
+      const { error } = await supabase.from('reviews').update({ reply }).eq('id', id);
       if (error) throw error;
       await fetchData();
   };
 
   if (loading) return <div className="h-screen bg-black flex items-center justify-center"><Loader2 className="animate-spin text-red-600" size={32} /></div>;
 
-  // PRIORITY 1: Auth Screen (Admin or Direct)
-  // We keep the original check for ADMIN login or direct auth access not related to PublicBooking flow
   if (showAuth && !session && !publicSlug && !settings) {
-      return <AuthScreen 
-        role={authRole} 
-        onLogin={() => { setShowAuth(false); fetchData(); }} 
-        onBack={() => setShowAuth(false)} 
-        preFillData={preFillAuth} 
-      />;
+      return <AuthScreen role={authRole} onLogin={() => { setShowAuth(false); fetchData(); }} onBack={() => setShowAuth(false)} preFillData={preFillAuth} />;
   }
 
-  // PRIORITY 2: Public Booking Interface (Guest or Client)
-  // Modified to Render AuthScreen as an Overlay if needed, keeping PublicBooking mounted
-  if ((publicSlug || session?.user?.user_metadata?.role === 'CLIENT') && settings) {
+  if ((publicSlug || session?.user?.user_metadata?.role === 'CLIENT' || previewMode) && settings) {
       return (
         <>
             <PublicBooking 
@@ -455,32 +395,25 @@ function App() {
                 onExit={() => {
                     supabase.auth.signOut();
                     setPublicSlug(null);
+                    setPreviewMode(false);
                     window.location.href = '/';
                 }}
                 onLoginRequest={() => { setAuthRole('CLIENT'); setShowAuth(true); }}
                 onRegisterRequest={(data) => { setAuthRole('CLIENT'); setPreFillAuth(data); setShowAuth(true); }}
             />
-            
             {showAuth && !session && (
                 <div className="fixed inset-0 z-[250] bg-black animate-in fade-in duration-300">
-                    <AuthScreen 
-                        role="CLIENT"
-                        onLogin={() => { setShowAuth(false); fetchData(); }} 
-                        onBack={() => setShowAuth(false)} 
-                        preFillData={preFillAuth} 
-                    />
+                    <AuthScreen role="CLIENT" onLogin={() => { setShowAuth(false); fetchData(); }} onBack={() => setShowAuth(false)} preFillData={preFillAuth} />
                 </div>
             )}
         </>
       );
   }
 
-  // PRIORITY 3: Landing Screen (No session, no public slug)
   if (!session) {
-      return <WelcomeScreen onSelectFlow={(role) => { setAuthRole(role); setShowAuth(true); }} />;
+      return <WelcomeScreen onSelectFlow={(role) => { setAuthRole(role); setShowAuth(true); }} onPreviewClient={() => setPreviewMode(true)} />;
   }
 
-  // PRIORITY 4: Admin Dashboard (Logged in & Settings Loaded)
   if (!settings) return <div className="h-screen bg-black flex items-center justify-center text-white">Configurações não encontradas.</div>;
 
   return (
@@ -495,22 +428,12 @@ function App() {
                     {activeTab === 'crm' && <CRM customers={customers} onAddCustomer={async (c) => { const { data: { session: s } } = await supabase.auth.getSession(); if (!s?.user) return; const { vehicles, ...customerData } = c; const { data: newCust, error } = await supabase.from('customers').insert({ business_id: settings?.id, user_id: s.user.id, ...customerData }).select().single(); if(!error && newCust && vehicles && vehicles.length > 0) { await supabase.from('vehicles').insert({ customer_id: newCust.id, brand: vehicles[0].brand, model: vehicles[0].model, plate: vehicles[0].plate, type: 'CARRO' }); } if(!error) fetchData(); }} onDeleteCustomer={async (id) => { await supabase.from('customers').delete().eq('id', id); fetchData(); }} businessSettings={settings} onUpdateSettings={async (s) => { const { success } = await save('business_settings', s); if (success) fetchData(); }} />}
                     {activeTab === 'finance' && <FinancialModule appointments={appointments} expenses={expenses} onAddExpense={async (e) => { await save('expenses', { ...e, business_id: settings.id }); fetchData(); }} onDeleteExpense={async (id) => { await supabase.from('expenses').delete().eq('id', id); fetchData(); }} currentPlan={settings.plan_type || PlanType.START} onUpgrade={() => setActiveTab('settings')} businessId={settings.id} />}
                     {activeTab === 'marketing' && <MarketingModule portfolio={portfolio} onAddPortfolioItem={(item) => setPortfolio(prev => [item, ...prev])} onDeletePortfolioItem={async (id) => { await supabase.from('portfolio_items').delete().eq('id', id); fetchData(); }} reviews={reviews} onReplyReview={handleReplyReview} currentPlan={settings.plan_type || PlanType.START} onUpgrade={() => setActiveTab('settings')} businessId={settings.id} />}
-                    {activeTab === 'settings' && <Settings currentPlan={settings.plan_type || PlanType.START} onUpgrade={async (plan) => { await save('business_settings', { id: settings.id, plan_type: plan }); fetchData(); }} settings={settings} onUpdateSettings={(s) => setSettings(s)} services={services} onAddService={async (s) => { await save('services', { ...s, business_id: settings.id, is_active: true }); fetchData(); }} onDeleteService={async (id) => { await supabase.from('services').delete().eq('id', id); fetchData(); }} />}
+                    {activeTab === 'settings' && <Settings currentPlan={settings.plan_type || PlanType.START} onUpgrade={async (plan) => { await save('business_settings', { id: settings.id, plan_type: plan }); fetchData(); }} settings={settings} onUpdateSettings={(s) => setSettings(s)} services={services} onAddService={async (s) => { fetchData(); }} onDeleteService={async (id) => { await supabase.from('services').delete().eq('id', id); fetchData(); }} />}
                 </main>
             </SubscriptionGuard>
         </div>
         <CookieConsent />
-        
-        {/* WhatsApp Notification Modal */}
-        {whatsappModal && (
-            <WhatsAppModal 
-                isOpen={whatsappModal.isOpen}
-                onClose={() => setWhatsappModal(null)}
-                phone={whatsappModal.phone}
-                message={whatsappModal.message}
-                customerName={whatsappModal.customerName}
-            />
-        )}
+        {whatsappModal && <WhatsAppModal isOpen={whatsappModal.isOpen} onClose={() => setWhatsappModal(null)} phone={whatsappModal.phone} message={whatsappModal.message} customerName={whatsappModal.customerName} />}
     </div>
   );
 }

@@ -1,6 +1,4 @@
 
-
-
 export enum PlanType {
   START = 'START',
   PRO = 'PRO',
@@ -43,6 +41,7 @@ export interface ServiceItem {
   compatible_vehicles?: VehicleType[];
   is_active: boolean;
   business_id?: string;
+  image_url?: string;
 }
 
 export interface OperatingRule {

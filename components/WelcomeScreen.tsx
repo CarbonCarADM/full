@@ -1,13 +1,14 @@
 
 import React, { useState, useEffect } from 'react';
-import { Lock, ChevronRight, ScanLine, ArrowRight, LogIn, UserPlus, ChevronLeft } from 'lucide-react';
+import { Lock, ChevronRight, ScanLine, ArrowRight, LogIn, UserPlus, ChevronLeft, LayoutGrid } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface WelcomeScreenProps {
   onSelectFlow: (role: 'CLIENT' | 'ADMIN', mode: 'LOGIN' | 'REGISTER' | 'GUEST') => void;
+  onPreviewClient?: () => void;
 }
 
-export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onSelectFlow }) => {
+export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onSelectFlow, onPreviewClient }) => {
   const [booting, setBooting] = useState(true);
   const [view, setView] = useState<'INITIAL' | 'CLIENT_OPTIONS'>('INITIAL');
 
@@ -148,17 +149,29 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onSelectFlow }) =>
                             A plataforma definitiva para agendamento e gestão de estética automotiva de alta performance.
                         </p>
                         
-                        <div className="flex flex-col sm:flex-row gap-4">
-                            <button 
-                                onClick={() => setView('CLIENT_OPTIONS')}
-                                className="group relative px-8 py-4 bg-white text-black rounded-full overflow-hidden transition-all hover:scale-105 active:scale-95 shadow-[0_0_40px_rgba(255,255,255,0.1)] flex-1 sm:flex-none"
-                            >
-                                <div className="absolute inset-0 bg-gradient-to-r from-zinc-200 to-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                                <div className="relative flex items-center justify-center gap-3">
-                                    <span className="text-[10px] font-black uppercase tracking-widest">Acessar Hangar</span>
-                                    <ArrowRight size={14} strokeWidth={3} className="group-hover:translate-x-1 transition-transform" />
-                                </div>
-                            </button>
+                        <div className="flex flex-col gap-4">
+                            <div className="flex flex-col sm:flex-row gap-4">
+                                <button 
+                                    onClick={() => setView('CLIENT_OPTIONS')}
+                                    className="group relative px-8 py-4 bg-white text-black rounded-full overflow-hidden transition-all hover:scale-105 active:scale-95 shadow-[0_0_40px_rgba(255,255,255,0.1)] flex-1 sm:flex-none"
+                                >
+                                    <div className="absolute inset-0 bg-gradient-to-r from-zinc-200 to-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                                    <div className="relative flex items-center justify-center gap-3">
+                                        <span className="text-[10px] font-black uppercase tracking-widest">Acessar Hangar</span>
+                                        <ArrowRight size={14} strokeWidth={3} className="group-hover:translate-x-1 transition-transform" />
+                                    </div>
+                                </button>
+                                
+                                <button 
+                                    onClick={onPreviewClient}
+                                    className="group relative px-8 py-4 bg-red-600/10 border border-red-600/20 text-red-500 rounded-full overflow-hidden transition-all hover:bg-red-600 hover:text-white hover:scale-105 active:scale-95 flex-1 sm:flex-none"
+                                >
+                                    <div className="relative flex items-center justify-center gap-3">
+                                        <span className="text-[10px] font-black uppercase tracking-widest">Painel do Cliente (Demo)</span>
+                                        <LayoutGrid size={14} className="group-hover:rotate-90 transition-transform duration-500" />
+                                    </div>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 ) : (
