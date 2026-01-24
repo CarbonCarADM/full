@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { X, Save, User, Store, Boxes, AlertTriangle } from 'lucide-react';
 import { Appointment, AppointmentStatus, Customer, Vehicle, BusinessSettings, ServiceItem, ServiceBay } from '../types';
@@ -215,7 +214,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                     )}
 
                     <div className="grid grid-cols-2 gap-4">
-                        <input type="date" className="bg-zinc-900 border border-white/10 rounded-xl px-4 py-4 text-sm text-white outline-none" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} />
+                        <input type="date" min={new Date().toISOString().split('T')[0]} className="bg-zinc-900 border border-white/10 rounded-xl px-4 py-4 text-sm text-white outline-none" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} />
                         <input type="time" className="bg-zinc-900 border border-white/10 rounded-xl px-4 py-4 text-sm text-white outline-none" value={formData.time} onChange={e => setFormData({...formData, time: e.target.value})} />
                     </div>
                 </div>
