@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { supabase } from './lib/supabaseClient';
 import { 
@@ -156,7 +155,7 @@ function App() {
             }
         }
 
-        // FALLBACK PARA PREVIEW MODE (Se nada for encontrado e estiver em preview)
+        // FALLBACK PARA PREVIEW MODE
         if (!businessId && previewMode) {
              const { data: firstBiz } = await supabase.from('business_settings').select('*').limit(1).maybeSingle();
              if (firstBiz) {
@@ -191,10 +190,7 @@ function App() {
             return;
         }
 
-        // --- FETCH LOGIC SPLIT BASED ON ROLE ---
-        
         if (userRole === 'CLIENT' || previewMode) {
-            // CLIENTS: Fetch only public data
             const results = await Promise.allSettled([
                 supabase.from('services').select('*').eq('business_id', businessId).eq('is_active', true),
                 supabase.from('portfolio_items').select('*').eq('business_id', businessId).order('created_at', { ascending: false }),
@@ -361,6 +357,7 @@ function App() {
           if (serviceBays.length > 0) finalBoxId = serviceBays[0].id;
           else return alert("Nenhum box disponível.");
       }
+      // Fix: Changed apt.duration_minutes to apt.durationMinutes on line 360
       const { error } = await supabase.from('appointments').insert({ business_id: settings.id, user_id: customerUserId, customer_id: finalCustomerId, vehicle_id: finalVehicleId, service_id: apt.serviceId, service_type: apt.serviceType, date: apt.date, time: apt.time, duration_minutes: apt.durationMinutes, price: apt.price, status: AppointmentStatus.NOVO, observation: apt.observation, box_id: finalBoxId });
       if (error) alert("Erro ao agendar: " + error.message);
       else fetchData(silent);

@@ -1,4 +1,3 @@
-
 -- =============================================================================
 -- CARBONCAR OS - BANCO DE DADOS DEFINITIVO (POSTGRESQL / SUPABASE)
 -- =============================================================================
@@ -196,10 +195,11 @@ CREATE POLICY "Admin Appointments" ON appointments FOR ALL TO authenticated USIN
 DROP POLICY IF EXISTS "Client Insert Appointment" ON appointments;
 CREATE POLICY "Client Insert Appointment" ON appointments FOR INSERT TO authenticated, anon WITH CHECK (true);
 
+-- REFINAMENTO: Permite que o cliente veja seus próprios agendamentos baseando-se no user_id (autenticado) ou vínculo de cliente
 DROP POLICY IF EXISTS "Client View Own Appointments" ON appointments;
 CREATE POLICY "Client View Own Appointments" ON appointments FOR SELECT TO authenticated USING (
     user_id = auth.uid() OR 
-    customer_id IN (SELECT id FROM customers WHERE email = (select auth.jwt() ->> 'email') OR user_id = auth.uid())
+    customer_id IN (SELECT id FROM customers WHERE user_id = auth.uid() OR email = (auth.jwt() ->> 'email'))
 );
 
 -- 9.4 POLÍTICAS PARA CLIENTES (Admin pode gerenciar todos do seu hangar)
@@ -214,7 +214,7 @@ CREATE POLICY "Public Insert Customer" ON customers FOR INSERT TO authenticated,
 -- CORREÇÃO: Usar auth.jwt() ->> 'email' é mais seguro e evita 403 em subqueries
 DROP POLICY IF EXISTS "Client View Own Customer Data" ON customers;
 CREATE POLICY "Client View Own Customer Data" ON customers FOR SELECT TO authenticated USING (
-    email = (select auth.jwt() ->> 'email') OR user_id = auth.uid()
+    user_id = auth.uid() OR email = (auth.jwt() ->> 'email')
 );
 
 -- 9.5 POLÍTICAS PARA VEÍCULOS
@@ -225,6 +225,12 @@ CREATE POLICY "Admin Vehicles" ON vehicles FOR ALL TO authenticated USING (
 
 DROP POLICY IF EXISTS "Public Insert Vehicle" ON vehicles;
 CREATE POLICY "Public Insert Vehicle" ON vehicles FOR INSERT TO authenticated, anon WITH CHECK (true);
+
+-- Permite que o cliente visualize seus próprios veículos
+DROP POLICY IF EXISTS "Client View Own Vehicles" ON vehicles;
+CREATE POLICY "Client View Own Vehicles" ON vehicles FOR SELECT TO authenticated USING (
+  customer_id IN (SELECT id FROM customers WHERE user_id = auth.uid() OR email = (auth.jwt() ->> 'email'))
+);
 
 -- 9.6 PORTFÓLIO E REVIEWS
 DROP POLICY IF EXISTS "Public View Portfolio" ON portfolio_items;
