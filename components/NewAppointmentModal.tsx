@@ -46,6 +46,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       // Select first bay by default if available
       if (serviceBays.length > 0) {
           setFormData(prev => ({ ...prev, boxId: serviceBays[0].id }));
+      } else {
+          setFormData(prev => ({ ...prev, boxId: '' }));
       }
     } else {
         if (serviceBays.length > 0 && !formData.boxId) {
@@ -84,7 +86,9 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
     if (!isNewCustomer && !finalCustomerId) return alert("Selecione um cliente da base.");
     if (!selectedService) return alert("Selecione um serviço.");
-    if (!formData.boxId) return alert("Selecione um Box de Atendimento.");
+    
+    // Removida a validação obrigatória de Box para permitir "Fila Geral"
+    // if (!formData.boxId) return alert("Selecione um Box de Atendimento.");
 
     // Validate blocked dates
     if (settings.blocked_dates?.some(bd => bd.date === formData.date)) {
@@ -96,7 +100,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       id: `new_${Date.now()}`,
       customerId: finalCustomerId,
       vehicleId: finalVehicleId,
-      boxId: formData.boxId,
+      boxId: formData.boxId, // Pode ser vazio agora
       serviceId: selectedService.id,
       serviceType: selectedService.name,
       date: formData.date,
@@ -208,8 +212,9 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                             ))}
                         </div>
                     ) : (
-                        <div className="p-4 rounded-xl border border-yellow-500/20 bg-yellow-900/10 text-yellow-500 text-xs text-center">
-                            Nenhum Box Configurado. O sistema criará boxes padrão automaticamente.
+                        <div className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/30 text-zinc-500 text-xs text-center flex flex-col items-center gap-2">
+                            <span className="font-bold uppercase tracking-widest text-[9px]">Fila Geral</span>
+                            <span className="opacity-70">O serviço será agendado sem box específico.</span>
                         </div>
                     )}
 
