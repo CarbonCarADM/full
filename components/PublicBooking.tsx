@@ -318,7 +318,9 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
   const handleContinueAction = async () => {
       if (step === 1) {
           if (!selectedDate || !selectedTime) return;
-          setStep(2);
+          // Se já está logado, pula a etapa de identificação (step 2) e vai direto para veículo (step 3)
+          if (currentUser) setStep(3);
+          else setStep(2);
       } else if (step === 2) {
           if (!currentUser) {
             if (!guestForm.name || !guestForm.phone || guestForm.phone.length < 10) {
@@ -505,6 +507,7 @@ export const PublicBooking: React.FC<PublicBookingProps> = ({
                     <button onClick={() => {
                         if (currentScreen === 'BOOKING' && step > 1) {
                             if (showAuthCard) setShowAuthCard(false);
+                            else if (step === 3 && currentUser) setStep(1); // Se logado, volta direto do veículo para serviço
                             else setStep(s => s - 1);
                         }
                         else if (profileView !== 'MENU') setProfileView('MENU');
