@@ -525,7 +525,7 @@ function App() {
   if (settings) {
     return (
         <div className="flex w-full overflow-hidden bg-black font-sans" style={{ zoom: '0.9', height: '111.12vh' }}>
-            <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} currentPlan={settings.plan_type || PlanType.START} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} onUpgrade={() => setActiveTab('settings')} onLogout={() => supabase.auth.signOut()} logoUrl={settings.profile_image_url || undefined} businessName={settings.business_name} slug={settings.slug} />
+            <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} currentPlan={settings.plan_type || PlanType.START} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} onUpgrade={() => setActiveTab('settings')} onLogout={() => supabase.auth.signOut()} logoUrl={settings.profile_image_url ?? undefined} businessName={settings.business_name} slug={settings.slug} />
             <div className="flex-1 flex flex-col min-w-0 h-full relative">
                 <button onClick={() => setSidebarOpen(true)} className="md:hidden absolute top-4 left-4 z-50 p-2 bg-zinc-900 rounded-lg text-white"><Menu size={20} /></button>
                 <SubscriptionGuard businessId={settings.id || ''} onPlanChange={fetchData}>
