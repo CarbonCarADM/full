@@ -315,10 +315,12 @@ function App() {
               business_name: fullName,
               slug: slug,
               whatsapp: phone,
-              plan_type: PlanType.START,
+              // TRIAL ELITE CONFIGURATION FOR MANUAL INIT
+              plan_type: PlanType.ELITE,
               subscription_status: 'TRIAL',
-              box_capacity: 3,
-              patio_capacity: 10,
+              trial_start_date: new Date().toISOString(),
+              box_capacity: 5,
+              patio_capacity: 15,
               configs: { operating_days: [] }
           });
 

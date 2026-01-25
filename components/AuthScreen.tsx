@@ -106,10 +106,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ role, onLogin, onBack, p
                     business_name: fullName,
                     slug: slug,
                     whatsapp: phone,
-                    plan_type: PlanType.START,
+                    // TRIAL ELITE CONFIGURATION
+                    plan_type: PlanType.ELITE, // Começa com Elite
                     subscription_status: 'TRIAL',
-                    box_capacity: 3,
-                    patio_capacity: 10,
+                    trial_start_date: new Date().toISOString(), // Marca o início hoje
+                    box_capacity: 5, // Capacidade maior para testar
+                    patio_capacity: 15,
                     configs: { operating_days: [] }
                 });
 
