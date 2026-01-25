@@ -499,26 +499,32 @@ function App() {
       );
   }
 
-  return (
-    <div className="flex w-full overflow-hidden bg-black font-sans" style={{ zoom: '0.9', height: '111.12vh' }}>
-        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} currentPlan={settings.plan_type || PlanType.START} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} onUpgrade={() => setActiveTab('settings')} onLogout={() => supabase.auth.signOut()} logoUrl={settings.profile_image_url} businessName={settings.business_name} slug={settings.slug} />
-        <div className="flex-1 flex flex-col min-w-0 h-full relative">
-            <button onClick={() => setSidebarOpen(true)} className="md:hidden absolute top-4 left-4 z-50 p-2 bg-zinc-900 rounded-lg text-white"><Menu size={20} /></button>
-            <SubscriptionGuard businessId={settings.id || ''} onPlanChange={fetchData}>
-                <main className="flex-1 h-full overflow-y-auto bg-black custom-scrollbar pb-10">
-                    {activeTab === 'dashboard' && <Dashboard currentPlan={settings.plan_type || PlanType.START} appointments={appointments} customers={customers} onUpgrade={() => setActiveTab('settings')} setActiveTab={setActiveTab} businessSettings={settings} onUpdateStatus={handleUpdateStatus} onCancelAppointment={(id) => handleUpdateStatus(id, AppointmentStatus.CANCELADO)} onDeleteAppointment={async (id) => { await supabase.from('appointments').delete().eq('id', id); fetchData(); }} onRefresh={async () => await fetchData()} />}
-                    {activeTab === 'schedule' && <Schedule appointments={appointments} customers={customers} onAddAppointment={handleAddAppointment} onUpdateStatus={handleUpdateStatus} onCancelAppointment={(id) => handleUpdateStatus(id, AppointmentStatus.CANCELADO)} onDeleteAppointment={async (id) => { await supabase.from('appointments').delete().eq('id', id); fetchData(); }} settings={settings} services={services} serviceBays={serviceBays} onUpgrade={() => setActiveTab('settings')} currentPlan={settings.plan_type} onRefresh={async () => await fetchData()} />}
-                    {activeTab === 'crm' && <CRM customers={customers} onAddCustomer={async (c) => { const { data: { session: s } } = await supabase.auth.getSession(); if (!s?.user) return; const { vehicles, ...customerData } = c; const { data: newCust, error } = await supabase.from('customers').insert({ business_id: settings?.id, user_id: s.user.id, ...customerData }).select().single(); if(!error && newCust && vehicles && vehicles.length > 0) { await supabase.from('vehicles').insert({ customer_id: newCust.id, brand: vehicles[0].brand, model: vehicles[0].model, plate: vehicles[0].plate, type: 'CARRO' }); } if(!error) fetchData(); }} onDeleteCustomer={async (id) => { await supabase.from('customers').delete().eq('id', id); fetchData(); }} businessSettings={settings} onUpdateSettings={async (s) => { const { success } = await save('business_settings', s); if (success) fetchData(); }} />}
-                    {activeTab === 'finance' && <FinancialModule appointments={appointments} expenses={expenses} onAddExpense={async (e) => { await save('expenses', { ...e, business_id: settings.id }); fetchData(); }} onDeleteExpense={async (id) => { await supabase.from('expenses').delete().eq('id', id); fetchData(); }} currentPlan={settings.plan_type || PlanType.START} onUpgrade={() => setActiveTab('settings')} businessId={settings.id} />}
-                    {activeTab === 'marketing' && <MarketingModule portfolio={portfolio} onAddPortfolioItem={(item) => setPortfolio(prev => [item, ...prev])} onDeletePortfolioItem={async (id) => { await supabase.from('portfolio_items').delete().eq('id', id); fetchData(); }} reviews={reviews} onReplyReview={handleReplyReview} currentPlan={settings.plan_type || PlanType.START} onUpgrade={() => setActiveTab('settings')} businessId={settings.id} />}
-                    {activeTab === 'settings' && <Settings currentPlan={settings.plan_type || PlanType.START} onUpgrade={async (plan) => { await save('business_settings', { id: settings.id, plan_type: plan }); fetchData(); }} settings={settings} onUpdateSettings={(s) => setSettings(s)} services={services} onAddService={async (s) => { fetchData(); }} onDeleteService={async (id) => { await supabase.from('services').delete().eq('id', id); fetchData(); }} />}
-                </main>
-            </SubscriptionGuard>
+  // MAIN DASHBOARD UI - SAFE GUARDED
+  // This block is only reached if `settings` exists, preventing TS2322
+  if (settings) {
+    return (
+        <div className="flex w-full overflow-hidden bg-black font-sans" style={{ zoom: '0.9', height: '111.12vh' }}>
+            <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} currentPlan={settings.plan_type || PlanType.START} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} onUpgrade={() => setActiveTab('settings')} onLogout={() => supabase.auth.signOut()} logoUrl={settings.profile_image_url} businessName={settings.business_name} slug={settings.slug} />
+            <div className="flex-1 flex flex-col min-w-0 h-full relative">
+                <button onClick={() => setSidebarOpen(true)} className="md:hidden absolute top-4 left-4 z-50 p-2 bg-zinc-900 rounded-lg text-white"><Menu size={20} /></button>
+                <SubscriptionGuard businessId={settings.id || ''} onPlanChange={fetchData}>
+                    <main className="flex-1 h-full overflow-y-auto bg-black custom-scrollbar pb-10">
+                        {activeTab === 'dashboard' && <Dashboard currentPlan={settings.plan_type || PlanType.START} appointments={appointments} customers={customers} onUpgrade={() => setActiveTab('settings')} setActiveTab={setActiveTab} businessSettings={settings} onUpdateStatus={handleUpdateStatus} onCancelAppointment={(id) => handleUpdateStatus(id, AppointmentStatus.CANCELADO)} onDeleteAppointment={async (id) => { await supabase.from('appointments').delete().eq('id', id); fetchData(); }} onRefresh={async () => await fetchData()} />}
+                        {activeTab === 'schedule' && <Schedule appointments={appointments} customers={customers} onAddAppointment={handleAddAppointment} onUpdateStatus={handleUpdateStatus} onCancelAppointment={(id) => handleUpdateStatus(id, AppointmentStatus.CANCELADO)} onDeleteAppointment={async (id) => { await supabase.from('appointments').delete().eq('id', id); fetchData(); }} settings={settings} services={services} serviceBays={serviceBays} onUpgrade={() => setActiveTab('settings')} currentPlan={settings.plan_type} onRefresh={async () => await fetchData()} />}
+                        {activeTab === 'crm' && <CRM customers={customers} onAddCustomer={async (c) => { const { data: { session: s } } = await supabase.auth.getSession(); if (!s?.user) return; const { vehicles, ...customerData } = c; const { data: newCust, error } = await supabase.from('customers').insert({ business_id: settings?.id, user_id: s.user.id, ...customerData }).select().single(); if(!error && newCust && vehicles && vehicles.length > 0) { await supabase.from('vehicles').insert({ customer_id: newCust.id, brand: vehicles[0].brand, model: vehicles[0].model, plate: vehicles[0].plate, type: 'CARRO' }); } if(!error) fetchData(); }} onDeleteCustomer={async (id) => { await supabase.from('customers').delete().eq('id', id); fetchData(); }} businessSettings={settings} onUpdateSettings={async (s) => { const { success } = await save('business_settings', s); if (success) fetchData(); }} />}
+                        {activeTab === 'finance' && <FinancialModule appointments={appointments} expenses={expenses} onAddExpense={async (e) => { await save('expenses', { ...e, business_id: settings.id }); fetchData(); }} onDeleteExpense={async (id) => { await supabase.from('expenses').delete().eq('id', id); fetchData(); }} currentPlan={settings.plan_type || PlanType.START} onUpgrade={() => setActiveTab('settings')} businessId={settings.id} />}
+                        {activeTab === 'marketing' && <MarketingModule portfolio={portfolio} onAddPortfolioItem={(item) => setPortfolio(prev => [item, ...prev])} onDeletePortfolioItem={async (id) => { await supabase.from('portfolio_items').delete().eq('id', id); fetchData(); }} reviews={reviews} onReplyReview={handleReplyReview} currentPlan={settings.plan_type || PlanType.START} onUpgrade={() => setActiveTab('settings')} businessId={settings.id} />}
+                        {activeTab === 'settings' && <Settings currentPlan={settings.plan_type || PlanType.START} onUpgrade={async (plan) => { await save('business_settings', { id: settings.id, plan_type: plan }); fetchData(); }} settings={settings} onUpdateSettings={(s) => setSettings(s)} services={services} onAddService={async (s) => { fetchData(); }} onDeleteService={async (id) => { await supabase.from('services').delete().eq('id', id); fetchData(); }} />}
+                    </main>
+                </SubscriptionGuard>
+            </div>
+            <CookieConsent />
+            {whatsappModal && <WhatsAppModal isOpen={whatsappModal.isOpen} onClose={() => setWhatsappModal(null)} phone={whatsappModal.phone} message={whatsappModal.message} customerName={whatsappModal.customerName} />}
         </div>
-        <CookieConsent />
-        {whatsappModal && <WhatsAppModal isOpen={whatsappModal.isOpen} onClose={() => setWhatsappModal(null)} phone={whatsappModal.phone} message={whatsappModal.message} customerName={whatsappModal.customerName} />}
-    </div>
-  );
+    );
+  }
+
+  return null;
 }
 
 export default App;
