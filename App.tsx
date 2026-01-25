@@ -15,11 +15,11 @@ import { WelcomeScreen } from './components/WelcomeScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { PublicBooking } from './components/PublicBooking';
 import { SubscriptionGuard } from './components/SubscriptionGuard';
-import { Loader2, Menu } from 'lucide-react';
+import { Loader2, Menu, AlertCircle, RefreshCw, LogOut, Store, Plus, Sparkles } from 'lucide-react';
 import { useEntitySaver } from './hooks/useEntitySaver';
 import { generateConfirmationMessage, openWhatsAppChat } from './services/whatsappService';
 import { CookieConsent } from './components/CookieConsent';
-import { generateUUID } from './lib/utils';
+import { generateUUID, cn } from './lib/utils';
 import { WhatsAppModal } from './components/WhatsAppModal';
 
 function App() {
@@ -27,6 +27,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [initializing, setInitializing] = useState(false);
 
   // Data
   const [settings, setSettings] = useState<BusinessSettings | null>(null);
@@ -115,7 +116,7 @@ function App() {
             }
         } 
         
-        // PRIORIDADE 2: Usuário Logado (Se não encontrou por slug ou se for admin)
+        // PRIORIDADE 2: Usuário Logado
         if (!businessId && session?.user) {
             if (userRole === 'CLIENT') {
                 const { data: lastApt } = await supabase
@@ -301,6 +302,35 @@ function App() {
     }
   };
 
+  const handleInitializeHangar = async () => {
+      if (!session?.user) return;
+      setInitializing(true);
+      try {
+          const fullName = session.user.user_metadata?.full_name || 'Meu Hangar';
+          const phone = session.user.user_metadata?.phone || '';
+          const slug = fullName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + Math.floor(Math.random() * 1000);
+          
+          const { error: bizError } = await supabase.from('business_settings').insert({
+              user_id: session.user.id,
+              business_name: fullName,
+              slug: slug,
+              whatsapp: phone,
+              plan_type: PlanType.START,
+              subscription_status: 'TRIAL',
+              box_capacity: 3,
+              patio_capacity: 10,
+              configs: { operating_days: [] }
+          });
+
+          if (bizError) throw bizError;
+          await fetchData();
+      } catch (err: any) {
+          alert("Erro ao inicializar hangar: " + err.message);
+      } finally {
+          setInitializing(false);
+      }
+  };
+
   useEffect(() => {
       if (session || publicSlug || previewMode) fetchData();
   }, [session, publicSlug, previewMode]);
@@ -357,7 +387,6 @@ function App() {
           if (serviceBays.length > 0) finalBoxId = serviceBays[0].id;
           else return alert("Nenhum box disponível.");
       }
-      // Fix: Changed apt.duration_minutes to apt.durationMinutes on line 360
       const { error } = await supabase.from('appointments').insert({ business_id: settings.id, user_id: customerUserId, customer_id: finalCustomerId, vehicle_id: finalVehicleId, service_id: apt.serviceId, service_type: apt.serviceType, date: apt.date, time: apt.time, duration_minutes: apt.durationMinutes, price: apt.price, status: AppointmentStatus.NOVO, observation: apt.observation, box_id: finalBoxId });
       if (error) alert("Erro ao agendar: " + error.message);
       else fetchData(silent);
@@ -411,7 +440,64 @@ function App() {
       return <WelcomeScreen onSelectFlow={(role) => { setAuthRole(role); setShowAuth(true); }} onPreviewClient={() => setPreviewMode(true)} />;
   }
 
-  if (!settings) return <div className="h-screen bg-black flex items-center justify-center text-white">Configurações não encontradas.</div>;
+  // FALLBACK: Se autenticado mas sem settings (Admin recém-criado ou erro de carregamento)
+  if (!settings && session) {
+      const isAdmin = session.user.user_metadata?.role === 'ADMIN';
+
+      return (
+          <div className="h-screen bg-[#050505] flex flex-col items-center justify-center p-8 text-center font-sans overflow-hidden">
+              <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] pointer-events-none" />
+              <div className="relative z-10 space-y-8 max-w-lg animate-in zoom-in-95 duration-500">
+                  <div className="w-20 h-20 rounded-[2.5rem] bg-zinc-900 border border-white/10 flex items-center justify-center mx-auto shadow-2xl relative group overflow-hidden">
+                      <div className="absolute inset-0 bg-red-600/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
+                      <AlertCircle className="text-red-500 z-10" size={36} strokeWidth={1.5} />
+                  </div>
+                  
+                  <div>
+                      <h2 className="text-3xl font-black text-white uppercase tracking-tighter mb-4">
+                        {isAdmin ? 'Hangar não Inicializado' : 'Acesso Restrito'}
+                      </h2>
+                      <p className="text-zinc-500 text-sm font-medium leading-relaxed">
+                          {isAdmin 
+                            ? 'Detectamos que sua conta de administrador foi criada, mas o espaço operacional (Hangar) ainda não foi configurado no banco de dados.'
+                            : 'Não conseguimos localizar configurações vinculadas a este perfil.'}
+                      </p>
+                  </div>
+
+                  <div className="grid gap-3 w-full">
+                      {isAdmin && (
+                          <button 
+                              onClick={handleInitializeHangar}
+                              disabled={initializing}
+                              className="w-full py-5 bg-red-600 hover:bg-red-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-3 shadow-[0_0_30px_rgba(220,38,38,0.3)] transition-all active:scale-[0.98]"
+                          >
+                              {initializing ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}
+                              Inicializar meu Hangar Agora
+                          </button>
+                      )}
+
+                      <button 
+                          onClick={() => fetchData()}
+                          className="w-full py-5 bg-white text-black rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-3 shadow-glow transition-all active:scale-[0.98]"
+                      >
+                          <RefreshCw size={16} /> Tentar Re-Sincronização
+                      </button>
+                      
+                      <button 
+                          onClick={() => supabase.auth.signOut()}
+                          className="w-full py-5 bg-zinc-900 border border-white/5 text-zinc-400 hover:text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3"
+                      >
+                          <LogOut size={16} /> Encerrar Sessão
+                      </button>
+                  </div>
+
+                  <div className="pt-8 opacity-20">
+                      <img src="https://i.postimg.cc/wxRyvSbG/carboncarlogo.png" className="h-6 mx-auto grayscale" alt="Carbon OS" />
+                  </div>
+              </div>
+          </div>
+      );
+  }
 
   return (
     <div className="flex w-full overflow-hidden bg-black font-sans" style={{ zoom: '0.9', height: '111.12vh' }}>
